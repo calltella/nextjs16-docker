@@ -1,0 +1,63 @@
+{
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "editor.detectIndentation": false,
+    // prisma
+    "prisma.enableDiagnostics": false,
+    "prisma.enableCodeLens": false,
+    // Prettier（保存時の自動整形を止める）JS/TS だけ有効にする
+    "editor.formatOnSave": false,
+    "editor.defaultFormatter": null,
+    "[typescript]": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "vscode.typescript-language-features"
+    },
+    "[typescriptreact]": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "vscode.typescript-language-features"
+    },
+    "[json]": {
+        "editor.formatOnSave": false
+    },
+    // Markdown Preview Enhanced
+    "markdown-preview-enhanced.enableScriptExecution": false,
+    // Remote Containers
+    "remote.autoForwardPorts": false,
+    "remote.restoreForwardedPorts": false,
+    // ✅ 不要な JS/TS 解析を根こそぎ止める
+    "files.exclude": {
+        "**/node_modules": true,
+        "**/.git": true,
+        "**/.wrangler": true,
+        "**/dist": true
+    },
+    // ✅ watcher も停止（Docker/Node対策）
+    "files.watcherExclude": {
+        "**/node_modules/**": true,
+        "**/.git/**": true,
+        "**/.wrangler/**": true,
+        "**/dist/**": true,
+        "**/.next/**": true
+    },
+    "search.exclude": {
+        "**/node_modules": true,
+        "**/.next": true
+    },
+    // ✅ TS Server 高速化（超重要）
+    "js/ts.tsserver.maxMemory": 4096,
+    "js/ts.tsserver.automaticTypeAcquisition.enabled": false,
+    "js/ts.tsserver.experimental.enableProjectDiagnostics": false,
+    "js/ts.validate.enabled": true,
+    // 検索インデックスを軽量化
+    "search.followSymlinks": false,
+    // ミニマップ無効
+    "editor.minimap.enabled": false,
+    // パンくず無効
+    "breadcrumbs.enabled": false,
+    "files.associations": {
+        "wrangler.json": "jsonc",
+        "*.css": "tailwindcss",
+        "tailwind.config.js": "tailwindcss",
+    },
+    "js/ts.tsdk.path": "node_modules/typescript/lib",
+}

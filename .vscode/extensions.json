@@ -1,0 +1,17 @@
+{
+    "recommendations": [
+        "ms-ceintl.vscode-language-pack-ja",
+        //"github.copilot-chat",
+        "ms-vscode-remote.remote-containers",
+        //"ms-vscode-remote.remote-ssh",
+        //"ms-vscode-remote.remote-ssh-edit",
+        "esbenp.prettier-vscode",
+        //"shd101wyy.markdown-preview-enhanced",
+        //"prisma.prisma",
+        "bradlc.vscode-tailwindcss",
+    ],
+    // （任意）非推奨にしたい拡張機能を列挙できます
+    // "unwantedRecommendations": ["github.copilot"]
+    // Developer: Show Running Extensions  (拡張機能が重いとき確認)
+    // Developer: Reload Window  (拡張機能再読み込み)
+}

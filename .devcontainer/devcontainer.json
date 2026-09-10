@@ -1,0 +1,15 @@
+{
+  "name": "Next.js Dev",
+  "dockerFile": "../Dockerfile",
+  "workspaceFolder": "/app",
+  "forwardPorts": [3000],
+  "postStartCommand": "npm run dev",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
+      ]
+    }
+  }
+}
