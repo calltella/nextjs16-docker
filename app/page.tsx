@@ -1,4 +1,6 @@
 // src/app/users/page.tsx
+export const dynamic = 'force-dynamic'
+
 import { db } from '@/src/db';
 import { users } from '@/src/db/schema';
 
