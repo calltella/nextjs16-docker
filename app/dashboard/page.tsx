@@ -1,5 +1,5 @@
 
 
-export async function Dashboard() {
+export default async function Dashboard() {
   return (<></>);
 }
