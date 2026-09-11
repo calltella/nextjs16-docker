@@ -4,7 +4,7 @@ import postgres from 'postgres';
 import * as schema from './schema';
 
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-
+// src/db/index.ts
 let _db: PostgresJsDatabase<typeof schema> | null = null;
 
 export function getDb(): PostgresJsDatabase<typeof schema> {

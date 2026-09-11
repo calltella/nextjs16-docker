@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type SubmitEventHandler } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-
+// app/login/page.tsx
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -15,7 +15,7 @@ export default function LoginPage() {
   const router = useRouter();
   const supabase = createClient();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit: SubmitEventHandler<HTMLFormElement> = async (e) => {
     e.preventDefault();
     if (!email || !password) {
       setMessage({ text: 'メールアドレスとパスワードを入力してください。', type: 'error' });
@@ -91,11 +91,10 @@ export default function LoginPage() {
                 setMode('signin');
                 setMessage(null);
               }}
-              className={`py-2 text-xs sm:text-sm font-semibold rounded-lg transition ${
-                mode === 'signin'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
+              className={`py-2 text-xs sm:text-sm font-semibold rounded-lg transition ${mode === 'signin'
+                ? 'bg-blue-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-slate-200'
+                }`}
             >
               ログイン
             </button>
@@ -105,11 +104,10 @@ export default function LoginPage() {
                 setMode('signup');
                 setMessage(null);
               }}
-              className={`py-2 text-xs sm:text-sm font-semibold rounded-lg transition ${
-                mode === 'signup'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
+              className={`py-2 text-xs sm:text-sm font-semibold rounded-lg transition ${mode === 'signup'
+                ? 'bg-blue-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-slate-200'
+                }`}
             >
               新規登録
             </button>
@@ -118,13 +116,12 @@ export default function LoginPage() {
           {/* Alert Message */}
           {message && (
             <div
-              className={`mb-6 p-4 rounded-2xl text-xs sm:text-sm border ${
-                message.type === 'error'
-                  ? 'bg-rose-950/40 border-rose-800/50 text-rose-300'
-                  : message.type === 'success'
+              className={`mb-6 p-4 rounded-2xl text-xs sm:text-sm border ${message.type === 'error'
+                ? 'bg-rose-950/40 border-rose-800/50 text-rose-300'
+                : message.type === 'success'
                   ? 'bg-emerald-950/40 border-emerald-800/50 text-emerald-300'
                   : 'bg-sky-950/40 border-sky-800/50 text-sky-300'
-              }`}
+                }`}
             >
               {message.text}
             </div>

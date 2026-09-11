@@ -1,5 +1,5 @@
 import { pgTable, uuid, text, timestamp, boolean, integer } from 'drizzle-orm/pg-core';
-
+// src/db/schema.ts
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   displayName: text('display_name').notNull(),

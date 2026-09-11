@@ -1,6 +1,6 @@
 import { defineConfig } from 'drizzle-kit';
 import { config } from 'dotenv';
-
+// /app/drizzle.config.ts
 config({ path: '.env.local' });
 
 export default defineConfig({
