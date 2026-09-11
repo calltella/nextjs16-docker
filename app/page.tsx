@@ -1,17 +1,31 @@
-// src/app/users/page.tsx
-export const dynamic = 'force-dynamic'
+import Link from 'next/link';
 
-import { db } from '@/src/db';
-import { users } from '@/src/db/schema';
-
-export default async function UsersPage() {
-  const allUsers = await db.select().from(users);
-
+export default function Home() {
   return (
-    <ul>
-      {allUsers.map((user) => (
-        <li key={user.id}>{user.displayName}</li>
-      ))}
-    </ul>
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 flex flex-col justify-center items-center p-6">
+      <main className="max-w-xl text-center space-y-6">
+        <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight">
+          シンプル家計簿
+        </h1>
+        <p className="text-lg text-gray-600 dark:text-gray-300">
+          毎日の収支を簡単・スピーディに記録・管理できます。
+        </p>
+
+        <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
+          <Link
+            href="/dashboard"
+            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl shadow-md transition"
+          >
+            家計簿を開く
+          </Link>
+          <Link
+            href="/login"
+            className="px-6 py-3 bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100 font-medium rounded-xl border border-gray-300 dark:border-gray-700 transition"
+          >
+            ログインページ
+          </Link>
+        </div>
+      </main>
+    </div>
   );
 }
