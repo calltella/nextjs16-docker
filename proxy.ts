@@ -49,6 +49,10 @@ export async function proxy(request: NextRequest) {
   console.log('Error:', error?.message ?? 'none')
   console.log('========================')
 
+  // /login に来たとき、既にログイン済みなら /dashboard へ
+  if (user && request.nextUrl.pathname.startsWith('/login')) {
+    return NextResponse.redirect(new URL('/dashboard', request.url))
+  }
   // 未ログインで /dashboard に来たらログインへ
   if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
     return NextResponse.redirect(new URL('/login', request.url))
