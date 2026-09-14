@@ -25,6 +25,12 @@ export default function Home() {
             ログインページ
           </Link>
           <Link
+            href="/card-types"
+            className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl shadow-md transition"
+          >
+            カード種類管理
+          </Link>
+          <Link
             href="/supabase-test"
             className="px-6 py-3 bg-indigo-500/10 dark:bg-indigo-950/40 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 font-medium rounded-xl border border-indigo-200 dark:border-indigo-800 transition"
           >

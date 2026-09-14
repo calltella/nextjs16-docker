@@ -15,6 +15,20 @@
       "when": 1789110516179,
       "tag": "0001_easy_rhino",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1789376386514,
+      "tag": "0002_card_types_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789376470600,
+      "tag": "0003_card_types_table",
+      "breakpoints": true
     }
   ]
 }

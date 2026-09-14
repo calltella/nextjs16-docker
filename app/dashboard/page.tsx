@@ -151,12 +151,20 @@ export default function Dashboard() {
               transactions_work テーブルの記録・管理
             </p>
           </div>
-          <Link
-            href="/"
-            className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
-          >
-            ← ホームに戻る
-          </Link>
+          <div className="flex gap-4 items-center">
+            <Link
+              href="/card-types"
+              className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium"
+            >
+              カード種類管理 →
+            </Link>
+            <Link
+              href="/"
+              className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+            >
+              ← ホームに戻る
+            </Link>
+          </div>
         </div>
 
         {errorMsg && (
