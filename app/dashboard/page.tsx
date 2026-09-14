@@ -264,13 +264,21 @@ export default function Dashboard() {
             </p>
           </div>
 
-          <button
-            onClick={() => setShowPeriodSettings(!showPeriodSettings)}
-            className="text-xs bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 font-medium px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm"
-          >
-            <span>⚙️</span>
-            <span>{showPeriodSettings ? '期間設定を閉じる' : '月の集計期間の設定'}</span>
-          </button>
+          <div className="flex gap-4 items-center">
+            <Link
+              href="/card-types"
+              className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium"
+            >
+              カード種類管理 →
+            </Link>
+            <button
+              onClick={() => setShowPeriodSettings(!showPeriodSettings)}
+              className="text-xs bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 font-medium px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm"
+            >
+              <span>⚙️</span>
+              <span>{showPeriodSettings ? '期間設定を閉じる' : '月の集計期間の設定'}</span>
+            </button>
+          </div>
         </div>
 
         {errorMsg && (
@@ -295,11 +303,10 @@ export default function Dashboard() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
               {/* Option 1: 15th Nearest Weekday */}
               <div
-                className={`p-4 rounded-xl border cursor-pointer transition ${
-                  settingMode === 'nearestWeekday15'
+                className={`p-4 rounded-xl border cursor-pointer transition ${settingMode === 'nearestWeekday15'
                     ? 'bg-white dark:bg-gray-750 border-blue-500 shadow-sm'
                     : 'bg-white/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700'
-                }`}
+                  }`}
                 onClick={() => handleSettingModeChange('nearestWeekday15')}
               >
                 <div className="flex items-center gap-2 mb-2">
@@ -321,11 +328,10 @@ export default function Dashboard() {
 
               {/* Option 2: Fixed Start Day */}
               <div
-                className={`p-4 rounded-xl border cursor-pointer transition ${
-                  settingMode === 'startDay'
+                className={`p-4 rounded-xl border cursor-pointer transition ${settingMode === 'startDay'
                     ? 'bg-white dark:bg-gray-750 border-blue-500 shadow-sm'
                     : 'bg-white/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700'
-                }`}
+                  }`}
                 onClick={() => handleSettingModeChange('startDay')}
               >
                 <div className="flex items-center gap-2 mb-2">
@@ -353,11 +359,10 @@ export default function Dashboard() {
                         e.stopPropagation();
                         handleStartDayChange(day);
                       }}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${
-                        settingMode === 'startDay' && monthStartDay === day
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${settingMode === 'startDay' && monthStartDay === day
                           ? 'bg-blue-600 text-white'
                           : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                      }`}
+                        }`}
                     >
                       {day === 1 ? '1日' : `${day}日`}
                     </button>
@@ -382,11 +387,10 @@ export default function Dashboard() {
 
               {/* Option 3: Custom Range */}
               <div
-                className={`p-4 rounded-xl border cursor-pointer transition ${
-                  settingMode === 'custom'
+                className={`p-4 rounded-xl border cursor-pointer transition ${settingMode === 'custom'
                     ? 'bg-white dark:bg-gray-750 border-blue-500 shadow-sm'
                     : 'bg-white/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700'
-                }`}
+                  }`}
                 onClick={() => handleSettingModeChange('custom')}
               >
                 <div className="flex items-center gap-2 mb-2">
@@ -542,9 +546,8 @@ export default function Dashboard() {
               </span>
             </div>
             <div
-              className={`mt-3 text-3xl font-extrabold ${
-                balance >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-600 dark:text-red-400'
-              }`}
+              className={`mt-3 text-3xl font-extrabold ${balance >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-600 dark:text-red-400'
+                }`}
             >
               ¥{balance.toLocaleString()}
             </div>
@@ -767,11 +770,10 @@ export default function Dashboard() {
                   >
                     <div className="flex items-center gap-3 sm:gap-4">
                       <span
-                        className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
-                          isIncome
+                        className={`text-xs px-2.5 py-1 rounded-full font-semibold ${isIncome
                             ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300'
                             : 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300'
-                        }`}
+                          }`}
                       >
                         {categoryLabel}
                       </span>
@@ -787,11 +789,10 @@ export default function Dashboard() {
 
                     <div className="flex items-center gap-4">
                       <span
-                        className={`font-bold text-sm sm:text-lg ${
-                          isIncome
+                        className={`font-bold text-sm sm:text-lg ${isIncome
                             ? 'text-green-600 dark:text-green-400'
                             : 'text-red-600 dark:text-red-400'
-                        }`}
+                          }`}
                       >
                         {isIncome ? '+' : '-'}¥
                         {(item.amount || 0).toLocaleString()}
