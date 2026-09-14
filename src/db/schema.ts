@@ -15,5 +15,12 @@ export const transactions = pgTable('transactions', {
   type: text('type', { enum: ['income', 'expense'] }).notNull().default('expense'),
   category: text('category').notNull(),
   date: text('date').notNull(),
+  paymentMethod: text('payment_method'),
+  parentCategory: text('parent_category'),
+  subCategory: text('sub_category'),
+  location: text('location'),
+  note: text('note'),
+  remarks: text('remarks'),
+  tags: text('tags'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

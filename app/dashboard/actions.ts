@@ -4,6 +4,7 @@ import { db } from '@/src/db';
 import { transactions } from '@/src/db/schema';
 import { eq, desc } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
+import { parseHouseholdCsv } from '@/lib/csv';
 
 export async function getTransactions() {
   try {
@@ -46,6 +47,51 @@ export async function addTransaction(formData: FormData) {
   } catch (error: unknown) {
     console.error('Failed to add transaction:', error);
     const message = error instanceof Error ? error.message : '取引の追加に失敗しました';
+    return { success: false, error: message };
+  }
+}
+
+export async function importCsv(formData: FormData) {
+  try {
+    const file = formData.get('file') as File | null;
+    if (!file) {
+      return { success: false, error: 'ファイルを選択してください' };
+    }
+
+    const csvText = await file.text();
+    const rows = parseHouseholdCsv(csvText);
+
+    if (rows.length === 0) {
+      return { success: false, error: '有効なデータが見つかりませんでした' };
+    }
+
+    // Overwrite database by deleting existing records first
+    await db.delete(transactions);
+
+    if (rows.length > 0) {
+      await db.insert(transactions).values(
+        rows.map((row) => ({
+          title: row.title,
+          amount: row.amount,
+          type: row.type,
+          category: row.category,
+          date: row.date,
+          paymentMethod: row.paymentMethod,
+          parentCategory: row.parentCategory,
+          subCategory: row.subCategory,
+          location: row.location,
+          note: row.note,
+          remarks: row.remarks,
+          tags: row.tags,
+        }))
+      );
+    }
+
+    revalidatePath('/dashboard');
+    return { success: true, count: rows.length, error: null };
+  } catch (error: unknown) {
+    console.error('Failed to import CSV:', error);
+    const message = error instanceof Error ? error.message : 'CSVのインポートに失敗しました';
     return { success: false, error: message };
   }
 }

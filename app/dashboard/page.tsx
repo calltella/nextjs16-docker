@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useTransition } from 'react';
-import { getTransactions, addTransaction, deleteTransaction } from './actions';
+import { getTransactions, addTransaction, deleteTransaction, importCsv } from './actions';
 import Link from 'next/link';
 
 interface Transaction {
@@ -11,6 +11,13 @@ interface Transaction {
   type: 'income' | 'expense';
   category: string;
   date: string;
+  paymentMethod?: string | null;
+  parentCategory?: string | null;
+  subCategory?: string | null;
+  location?: string | null;
+  note?: string | null;
+  remarks?: string | null;
+  tags?: string | null;
 }
 
 const CATEGORIES = {
@@ -22,9 +29,11 @@ export default function Dashboard() {
   const [items, setItems] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [type, setType] = useState<'income' | 'expense'>('expense');
   const [category, setCategory] = useState(CATEGORIES.expense[0]);
   const [isPending, startTransition] = useTransition();
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const loadData = async () => {
     const res = await getTransactions();
@@ -61,6 +70,7 @@ export default function Dashboard() {
   const handleAdd = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErrorMsg(null);
+    setSuccessMsg(null);
     const form = e.currentTarget;
     const formData = new FormData(form);
 
@@ -72,6 +82,35 @@ export default function Dashboard() {
         form.reset();
         setType('expense');
         setCategory(CATEGORIES.expense[0]);
+        await loadData();
+      }
+    });
+  };
+
+  const handleImportCsv = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    if (!selectedFile) {
+      setErrorMsg('CSVファイルを選択してください');
+      return;
+    }
+
+    if (!confirm('既存の全データが削除され、取り込んだCSVファイルの内容でデータベースが上書きされます。実行しますか？')) {
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+
+    startTransition(async () => {
+      const res = await importCsv(formData);
+      if (!res.success) {
+        setErrorMsg(res.error || 'CSVの取り込みに失敗しました');
+      } else {
+        setSuccessMsg(`CSVを取り込みました (${res.count} 件)`);
+        setSelectedFile(null);
         await loadData();
       }
     });
@@ -125,6 +164,35 @@ export default function Dashboard() {
             {errorMsg}
           </div>
         )}
+
+        {successMsg && (
+          <div className="p-4 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 rounded-lg text-sm">
+            {successMsg}
+          </div>
+        )}
+
+        {/* CSV Import Card */}
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+          <h2 className="text-lg font-bold mb-2">CSVファイルからの取込（上書き）</h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+            家計簿のCSVを取り込みます。取り込み時に既存のデータベースは全て上書きされます。
+          </p>
+          <form onSubmit={handleImportCsv} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+            <input
+              type="file"
+              accept=".csv"
+              onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+              className="block w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 dark:file:bg-blue-900/40 dark:file:text-blue-300 hover:file:bg-blue-100 cursor-pointer"
+            />
+            <button
+              type="submit"
+              disabled={isPending || !selectedFile}
+              className="whitespace-nowrap bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-4 py-2.5 rounded-lg transition text-sm disabled:opacity-50"
+            >
+              {isPending ? '取り込み中...' : 'CSVを取り込んで上書き'}
+            </button>
+          </form>
+        </div>
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
