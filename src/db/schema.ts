@@ -1,4 +1,6 @@
-import { pgTable, uuid, text, timestamp, boolean, integer } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, boolean, integer, bigint, date } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+
 // src/db/schema.ts
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -22,5 +24,21 @@ export const transactions = pgTable('transactions', {
   note: text('note'),
   remarks: text('remarks'),
   tags: text('tags'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const transactionsWork = pgTable('transactions_work', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
+  userId: uuid('user_id').notNull().default(sql`auth.uid()`),
+  date: date('date').notNull(),
+  type: text('type').notNull(),
+  paymentMethod: text('payment_method'),
+  parentCategory: text('parent_category'),
+  childCategory: text('child_category'),
+  amount: integer('amount'),
+  location: text('location'),
+  memo: text('memo'),
+  note: text('note'),
+  tag: text('tag'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

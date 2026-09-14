@@ -1,14 +1,14 @@
 'use server';
 
 import { db } from '@/src/db';
-import { transactions } from '@/src/db/schema';
+import { transactionsWork } from '@/src/db/schema';
 import { eq, desc } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { parseHouseholdCsv } from '@/lib/csv';
 
 export async function getTransactions() {
   try {
-    const list = await db.select().from(transactions).orderBy(desc(transactions.date), desc(transactions.createdAt));
+    const list = await db.select().from(transactionsWork).orderBy(desc(transactionsWork.date), desc(transactionsWork.createdAt));
     return { data: list, error: null };
   } catch (error: unknown) {
     console.error('Failed to fetch transactions:', error);
@@ -19,27 +19,30 @@ export async function getTransactions() {
 
 export async function addTransaction(formData: FormData) {
   try {
-    const title = formData.get('title') as string;
     const amountStr = formData.get('amount') as string;
-    const type = (formData.get('type') as 'income' | 'expense') || 'expense';
-    const category = formData.get('category') as string;
+    const type = (formData.get('type') as string) || '支出';
+    const parentCategory = (formData.get('parentCategory') as string) || (formData.get('category') as string) || 'その他';
+    const childCategory = formData.get('childCategory') as string || undefined;
     const date = (formData.get('date') as string) || new Date().toISOString().split('T')[0];
+    const memo = formData.get('memo') as string || (formData.get('title') as string) || undefined;
+    const location = formData.get('location') as string || undefined;
+    const paymentMethod = formData.get('paymentMethod') as string || undefined;
+    const note = formData.get('note') as string || undefined;
+    const tag = formData.get('tag') as string || undefined;
 
-    if (!title || !amountStr || !category) {
-      return { success: false, error: 'タイトル、金額、カテゴリーは必須です' };
-    }
+    const amount = amountStr ? parseInt(amountStr, 10) : null;
 
-    const amount = parseInt(amountStr, 10);
-    if (isNaN(amount) || amount <= 0) {
-      return { success: false, error: '金額は1以上の数値を入力してください' };
-    }
-
-    await db.insert(transactions).values({
-      title,
-      amount,
-      type,
-      category,
+    await db.insert(transactionsWork).values({
       date,
+      type,
+      paymentMethod,
+      parentCategory,
+      childCategory,
+      amount: amount && !isNaN(amount) ? amount : null,
+      location,
+      memo,
+      note,
+      tag,
     });
 
     revalidatePath('/dashboard');
@@ -65,24 +68,22 @@ export async function importCsv(formData: FormData) {
       return { success: false, error: '有効なデータが見つかりませんでした' };
     }
 
-    // Overwrite database by deleting existing records first
-    await db.delete(transactions);
+    // Overwrite transactions_work database by deleting existing records first
+    await db.delete(transactionsWork);
 
     if (rows.length > 0) {
-      await db.insert(transactions).values(
+      await db.insert(transactionsWork).values(
         rows.map((row) => ({
-          title: row.title,
-          amount: row.amount,
-          type: row.type,
-          category: row.category,
           date: row.date,
+          type: row.type,
           paymentMethod: row.paymentMethod,
           parentCategory: row.parentCategory,
-          subCategory: row.subCategory,
+          childCategory: row.childCategory,
+          amount: row.amount ?? null,
           location: row.location,
+          memo: row.memo,
           note: row.note,
-          remarks: row.remarks,
-          tags: row.tags,
+          tag: row.tag,
         }))
       );
     }
@@ -96,9 +97,9 @@ export async function importCsv(formData: FormData) {
   }
 }
 
-export async function deleteTransaction(id: string) {
+export async function deleteTransaction(id: number) {
   try {
-    await db.delete(transactions).where(eq(transactions.id, id));
+    await db.delete(transactionsWork).where(eq(transactionsWork.id, id));
     revalidatePath('/dashboard');
     return { success: true, error: null };
   } catch (error: unknown) {

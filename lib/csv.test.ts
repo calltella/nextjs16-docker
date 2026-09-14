@@ -13,29 +13,29 @@ function testParseHouseholdCsv() {
 
   // Row 1
   assert.strictEqual(rows[0].date, '2022-01-07');
-  assert.strictEqual(rows[0].type, 'expense');
+  assert.strictEqual(rows[0].type, '支出');
   assert.strictEqual(rows[0].paymentMethod, '三井住友カード');
   assert.strictEqual(rows[0].parentCategory, '趣味');
-  assert.strictEqual(rows[0].category, '趣味');
+  assert.strictEqual(rows[0].childCategory, undefined);
   assert.strictEqual(rows[0].amount, 2800);
   assert.strictEqual(rows[0].location, 'バルト11');
-  assert.strictEqual(rows[0].title, 'バルト11');
+  assert.strictEqual(rows[0].memo, undefined);
+  assert.strictEqual(rows[0].note, undefined);
+  assert.strictEqual(rows[0].tag, undefined);
 
   // Row 2
   assert.strictEqual(rows[1].date, '2022-01-08');
-  assert.strictEqual(rows[1].type, 'expense');
+  assert.strictEqual(rows[1].type, '支出');
   assert.strictEqual(rows[1].parentCategory, '通信');
-  assert.strictEqual(rows[1].subCategory, 'インターネット');
-  assert.strictEqual(rows[1].category, 'インターネット');
+  assert.strictEqual(rows[1].childCategory, 'インターネット');
   assert.strictEqual(rows[1].amount, 5724);
-  assert.strictEqual(rows[1].note, 'メガ・エッグ');
-  assert.strictEqual(rows[1].title, 'メガ・エッグ');
+  assert.strictEqual(rows[1].memo, 'メガ・エッグ');
 
   // Row 3 (Income)
   assert.strictEqual(rows[2].date, '2022-02-15');
-  assert.strictEqual(rows[2].type, 'income');
+  assert.strictEqual(rows[2].type, '収入');
   assert.strictEqual(rows[2].amount, 249006);
-  assert.strictEqual(rows[2].note, 'ゆういち');
+  assert.strictEqual(rows[2].memo, 'ゆういち');
 
   console.log('All CSV parser unit tests passed successfully!');
 }
