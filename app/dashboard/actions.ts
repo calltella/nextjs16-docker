@@ -5,10 +5,26 @@ import { transactionsWork } from '@/src/db/schema';
 import { eq, desc } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { parseHouseholdCsv } from '@/lib/csv';
+import { createClient } from '@/lib/supabase/server';
 
 export async function getTransactions() {
   try {
-    const list = await db.select().from(transactionsWork).orderBy(desc(transactionsWork.date), desc(transactionsWork.createdAt));
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (user?.id) {
+      const list = await db
+        .select()
+        .from(transactionsWork)
+        .where(eq(transactionsWork.userId, user.id))
+        .orderBy(desc(transactionsWork.date), desc(transactionsWork.createdAt));
+      return { data: list, error: null };
+    }
+
+    const list = await db
+      .select()
+      .from(transactionsWork)
+      .orderBy(desc(transactionsWork.date), desc(transactionsWork.createdAt));
     return { data: list, error: null };
   } catch (error: unknown) {
     console.error('Failed to fetch transactions:', error);
@@ -19,6 +35,9 @@ export async function getTransactions() {
 
 export async function addTransaction(formData: FormData) {
   try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
     const amountStr = formData.get('amount') as string;
     const type = (formData.get('type') as string) || '支出';
     const parentCategory = (formData.get('parentCategory') as string) || (formData.get('category') as string) || 'その他';
@@ -32,7 +51,7 @@ export async function addTransaction(formData: FormData) {
 
     const amount = amountStr ? parseInt(amountStr, 10) : null;
 
-    await db.insert(transactionsWork).values({
+    const insertValues: typeof transactionsWork.$inferInsert = {
       date,
       type,
       paymentMethod,
@@ -43,7 +62,13 @@ export async function addTransaction(formData: FormData) {
       memo,
       note,
       tag,
-    });
+    };
+
+    if (user?.id) {
+      insertValues.userId = user.id;
+    }
+
+    await db.insert(transactionsWork).values(insertValues);
 
     revalidatePath('/dashboard');
     return { success: true, error: null };
@@ -56,6 +81,9 @@ export async function addTransaction(formData: FormData) {
 
 export async function importCsv(formData: FormData) {
   try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
     const file = formData.get('file') as File | null;
     if (!file) {
       return { success: false, error: 'ファイルを選択してください' };
@@ -68,23 +96,33 @@ export async function importCsv(formData: FormData) {
       return { success: false, error: '有効なデータが見つかりませんでした' };
     }
 
-    // Overwrite transactions_work database by deleting existing records first
-    await db.delete(transactionsWork);
+    // Overwrite transactions_work database by deleting existing records for user if logged in, or all if not
+    if (user?.id) {
+      await db.delete(transactionsWork).where(eq(transactionsWork.userId, user.id));
+    } else {
+      await db.delete(transactionsWork);
+    }
 
     if (rows.length > 0) {
       await db.insert(transactionsWork).values(
-        rows.map((row) => ({
-          date: row.date,
-          type: row.type,
-          paymentMethod: row.paymentMethod,
-          parentCategory: row.parentCategory,
-          childCategory: row.childCategory,
-          amount: row.amount ?? null,
-          location: row.location,
-          memo: row.memo,
-          note: row.note,
-          tag: row.tag,
-        }))
+        rows.map((row) => {
+          const item: typeof transactionsWork.$inferInsert = {
+            date: row.date,
+            type: row.type,
+            paymentMethod: row.paymentMethod,
+            parentCategory: row.parentCategory,
+            childCategory: row.childCategory,
+            amount: row.amount ?? null,
+            location: row.location,
+            memo: row.memo,
+            note: row.note,
+            tag: row.tag,
+          };
+          if (user?.id) {
+            item.userId = user.id;
+          }
+          return item;
+        })
       );
     }
 
