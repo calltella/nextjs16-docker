@@ -136,6 +136,46 @@ export async function importCsv(formData: FormData) {
   }
 }
 
+export async function updateTransaction(id: number, formData: FormData) {
+  try {
+    const amountStr = formData.get('amount') as string;
+    const type = (formData.get('type') as string) || '支出';
+    const parentCategory = (formData.get('parentCategory') as string) || (formData.get('category') as string) || 'その他';
+    const childCategory = (formData.get('childCategory') as string) || undefined;
+    const date = (formData.get('date') as string) || new Date().toISOString().split('T')[0];
+    const memo = (formData.get('memo') as string) || (formData.get('title') as string) || undefined;
+    const location = (formData.get('location') as string) || undefined;
+    const paymentMethod = (formData.get('paymentMethod') as string) || undefined;
+    const note = (formData.get('note') as string) || undefined;
+    const tag = (formData.get('tag') as string) || undefined;
+
+    const amount = amountStr ? parseInt(amountStr, 10) : null;
+
+    await db
+      .update(transactionsWork)
+      .set({
+        date,
+        type,
+        paymentMethod: paymentMethod || null,
+        parentCategory,
+        childCategory: childCategory || null,
+        amount: amount && !isNaN(amount) ? amount : null,
+        location: location || null,
+        memo: memo || null,
+        note: note || null,
+        tag: tag || null,
+      })
+      .where(eq(transactionsWork.id, id));
+
+    revalidatePath('/dashboard');
+    return { success: true, error: null };
+  } catch (error: unknown) {
+    console.error('Failed to update transaction:', error);
+    const message = error instanceof Error ? error.message : '取引の更新に失敗しました';
+    return { success: false, error: message };
+  }
+}
+
 export async function deleteTransaction(id: number) {
   try {
     await db.delete(transactionsWork).where(eq(transactionsWork.id, id));

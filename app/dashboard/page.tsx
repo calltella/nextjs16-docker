@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useTransition, useMemo } from 'react';
-import { getTransactions, addTransaction, deleteTransaction } from './actions';
+import { getTransactions, addTransaction, updateTransaction, deleteTransaction } from './actions';
 import Navbar from '@/app/components/Navbar';
 import { getMonthlyDateRange, formatDateJapanese } from '@/lib/date-utils';
 import Link from 'next/link';
@@ -73,10 +73,14 @@ export default function Dashboard() {
   const [customEndDate, setCustomEndDate] = useState<string>('');
   const [showPeriodSettings, setShowPeriodSettings] = useState<boolean>(false);
 
-  // Filter mode
+  // Filter modes
   const [showOnlyPeriodItems, setShowOnlyPeriodItems] = useState<boolean>(true);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('all');
 
-  // Form state
+  // Editing state
+  const [editingItem, setEditingItem] = useState<TransactionWorkItem | null>(null);
+
+  // Registration Form state
   const [type, setType] = useState<'支出' | '収入'>('支出');
   const [parentCategory, setParentCategory] = useState<string>(CATEGORIES['支出'][0]);
   const [isPending, startTransition] = useTransition();
@@ -140,6 +144,14 @@ export default function Dashboard() {
     };
   }, []);
 
+  // Group unique payment methods / credit cards
+  const uniquePaymentMethods = useMemo(() => {
+    const methods = items
+      .map((i) => i.paymentMethod?.trim())
+      .filter((m): m is string => Boolean(m && m.length > 0));
+    return Array.from(new Set(methods)).sort();
+  }, [items]);
+
   const handlePrevMonth = () => {
     if (selectedMonth === 1) {
       setSelectedYear((prev) => prev - 1);
@@ -187,6 +199,23 @@ export default function Dashboard() {
     });
   };
 
+  const handleUpdate = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!editingItem) return;
+    setErrorMsg(null);
+    const formData = new FormData(e.currentTarget);
+
+    startTransition(async () => {
+      const res = await updateTransaction(editingItem.id, formData);
+      if (!res.success) {
+        setErrorMsg(res.error || '更新に失敗しました');
+      } else {
+        setEditingItem(null);
+        await loadData();
+      }
+    });
+  };
+
   const handleDelete = async (id: number) => {
     if (!confirm('この明細を削除しますか？')) return;
     startTransition(async () => {
@@ -200,34 +229,42 @@ export default function Dashboard() {
   };
 
   // Filter transactions by period
-  const filteredItems = useMemo(() => {
+  const periodItems = useMemo(() => {
     return items.filter((item) => {
       if (!item.date) return false;
       return item.date >= computedRange.startDate && item.date <= computedRange.endDate;
     });
   }, [items, computedRange]);
 
-  const displayItems = showOnlyPeriodItems ? filteredItems : items;
+  // Base list depending on showOnlyPeriodItems flag
+  const baseItems = showOnlyPeriodItems ? periodItems : items;
 
-  // Aggregation for period
+  // Filtered by selected payment method
+  const displayItems = useMemo(() => {
+    if (selectedPaymentMethod === 'all') return baseItems;
+    if (selectedPaymentMethod === 'none') return baseItems.filter((i) => !i.paymentMethod);
+    return baseItems.filter((i) => i.paymentMethod === selectedPaymentMethod);
+  }, [baseItems, selectedPaymentMethod]);
+
+  // Aggregation for period (for all payment methods in period)
   const totalIncome = useMemo(() => {
-    return filteredItems
+    return periodItems
       .filter((i) => i.type === '収入' || i.type === 'income')
       .reduce((sum, i) => sum + (i.amount || 0), 0);
-  }, [filteredItems]);
+  }, [periodItems]);
 
   const totalExpense = useMemo(() => {
-    return filteredItems
+    return periodItems
       .filter((i) => i.type === '支出' || i.type === 'expense')
       .reduce((sum, i) => sum + (i.amount || 0), 0);
-  }, [filteredItems]);
+  }, [periodItems]);
 
   const balance = totalIncome - totalExpense;
 
   // Category breakdowns for period
   const categoryExpenses = useMemo(() => {
     const map: Record<string, number> = {};
-    filteredItems
+    periodItems
       .filter((i) => i.type === '支出' || i.type === 'expense')
       .forEach((i) => {
         const cat = i.parentCategory || 'その他';
@@ -235,11 +272,11 @@ export default function Dashboard() {
       });
 
     return Object.entries(map).sort((a, b) => b[1] - a[1]);
-  }, [filteredItems]);
+  }, [periodItems]);
 
   const categoryIncomes = useMemo(() => {
     const map: Record<string, number> = {};
-    filteredItems
+    periodItems
       .filter((i) => i.type === '収入' || i.type === 'income')
       .forEach((i) => {
         const cat = i.parentCategory || 'その他';
@@ -247,7 +284,7 @@ export default function Dashboard() {
       });
 
     return Object.entries(map).sort((a, b) => b[1] - a[1]);
-  }, [filteredItems]);
+  }, [periodItems]);
 
   const todayStr = new Date().toISOString().split('T')[0];
 
@@ -255,13 +292,20 @@ export default function Dashboard() {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 flex flex-col">
       <Navbar />
 
+      {/* Shared Datalist for Payment Methods */}
+      <datalist id="payment-methods-list">
+        {uniquePaymentMethods.map((pm) => (
+          <option key={pm} value={pm} />
+        ))}
+      </datalist>
+
       <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-8 space-y-8">
         {/* Title Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-gray-200 dark:border-gray-800">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">月別家計簿・集計</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              月ごとの収支の確認・分析・集計を行えます。
+              月ごとの収支の確認・分析・クレジットカード別管理を行えます。
             </p>
           </div>
 
@@ -565,6 +609,59 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* Credit Card / Payment Method Filter Bar */}
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 space-y-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <h2 className="text-lg font-bold flex items-center gap-2">
+              <span>💳</span> クレジットカード・支払い方法別の絞り込み
+            </h2>
+            {selectedPaymentMethod !== 'all' && (
+              <button
+                onClick={() => setSelectedPaymentMethod('all')}
+                className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                すべての支払い方法を表示に戻す
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setSelectedPaymentMethod('all')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition ${
+                selectedPaymentMethod === 'all'
+                  ? 'bg-blue-600 text-white shadow'
+                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
+              }`}
+            >
+              すべて ({baseItems.length}件)
+            </button>
+
+            {uniquePaymentMethods.map((pm) => {
+              const cardCount = baseItems.filter((i) => i.paymentMethod === pm).length;
+              const cardTotal = baseItems
+                .filter((i) => i.paymentMethod === pm && (i.type === '支出' || i.type === 'expense'))
+                .reduce((sum, i) => sum + (i.amount || 0), 0);
+
+              return (
+                <button
+                  key={pm}
+                  onClick={() => setSelectedPaymentMethod(pm)}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 ${
+                    selectedPaymentMethod === pm
+                      ? 'bg-indigo-600 text-white shadow'
+                      : 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 border border-indigo-200/60 dark:border-indigo-800/40'
+                  }`}
+                >
+                  <span>💳 {pm}</span>
+                  <span className="opacity-80">({cardCount}件)</span>
+                  <span className="font-bold">¥{cardTotal.toLocaleString()}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Category Breakdown Card */}
         <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 space-y-6">
           <h2 className="text-lg font-bold flex items-center gap-2">
@@ -687,6 +784,19 @@ export default function Dashboard() {
 
             <div>
               <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                カード・支払い方法
+              </label>
+              <input
+                type="text"
+                name="paymentMethod"
+                list="payment-methods-list"
+                placeholder="例: 楽天カード"
+                className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
                 メモ
               </label>
               <input
@@ -723,11 +833,11 @@ export default function Dashboard() {
               />
             </div>
 
-            <div className="flex items-end">
+            <div className="lg:col-span-6 flex justify-end">
               <button
                 type="submit"
                 disabled={isPending}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium p-2.5 rounded-xl transition text-sm shadow disabled:opacity-50"
+                className="px-6 bg-blue-600 hover:bg-blue-700 text-white font-medium p-2.5 rounded-xl transition text-sm shadow disabled:opacity-50"
               >
                 {isPending ? '追加中...' : '登録する'}
               </button>
@@ -739,9 +849,10 @@ export default function Dashboard() {
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
           <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
-              <h2 className="text-lg font-bold">収支明細</h2>
+              <h2 className="text-lg font-bold">収支明細一覧</h2>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                {showOnlyPeriodItems ? '当月対象期間の明細のみ表示中' : '全期間の明細を表示中'}
+                {selectedPaymentMethod !== 'all' ? `「${selectedPaymentMethod}」の` : ''}
+                {showOnlyPeriodItems ? '当月対象期間の明細を表示中' : '全期間の明細を表示中'}
               </p>
             </div>
 
@@ -762,14 +873,119 @@ export default function Dashboard() {
             <div className="p-8 text-center text-gray-500 text-sm">読み込み中...</div>
           ) : displayItems.length === 0 ? (
             <div className="p-8 text-center text-gray-500 text-sm">
-              明細がありません。上のフォームから登録するか、CSV取込画面からデータを取り込んでください。
+              該当する明細がありません。上のフォームから登録するか、CSV取込画面からデータを取り込んでください。
             </div>
           ) : (
             <div className="divide-y divide-gray-100 dark:divide-gray-700">
               {displayItems.map((item) => {
+                const isEditing = editingItem?.id === item.id;
                 const categoryLabel = item.childCategory || item.parentCategory || 'その他';
                 const displayTitle = item.memo || item.note || item.location || categoryLabel;
                 const isIncome = item.type === '収入' || item.type === 'income';
+
+                if (isEditing) {
+                  return (
+                    <div key={item.id} className="p-6 bg-blue-50/50 dark:bg-gray-750">
+                      <form onSubmit={handleUpdate} className="space-y-4">
+                        <div className="flex items-center justify-between border-b pb-2 dark:border-gray-700">
+                          <span className="text-xs font-bold text-blue-600 dark:text-blue-400">
+                            明細の編集 (ID: {item.id})
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setEditingItem(null)}
+                            className="text-xs text-gray-500 hover:text-gray-700"
+                          >
+                            キャンセル ✕
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                          <div>
+                            <label className="block text-[10px] text-gray-500 mb-1">区分</label>
+                            <select
+                              name="type"
+                              defaultValue={item.type}
+                              className="w-full p-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-xs"
+                            >
+                              <option value="支出">支出</option>
+                              <option value="収入">収入</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] text-gray-500 mb-1">カテゴリ</label>
+                            <input
+                              type="text"
+                              name="parentCategory"
+                              defaultValue={item.parentCategory || ''}
+                              className="w-full p-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-xs"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] text-gray-500 mb-1">カード・支払い方法</label>
+                            <input
+                              type="text"
+                              name="paymentMethod"
+                              list="payment-methods-list"
+                              defaultValue={item.paymentMethod || ''}
+                              className="w-full p-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-xs"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] text-gray-500 mb-1">メモ</label>
+                            <input
+                              type="text"
+                              name="memo"
+                              defaultValue={item.memo || ''}
+                              className="w-full p-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-xs"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] text-gray-500 mb-1">金額 (円)</label>
+                            <input
+                              type="number"
+                              name="amount"
+                              defaultValue={item.amount ?? ''}
+                              className="w-full p-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-xs"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] text-gray-500 mb-1">日付</label>
+                            <input
+                              type="date"
+                              name="date"
+                              defaultValue={item.date}
+                              required
+                              className="w-full p-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-xs"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingItem(null)}
+                            className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-medium hover:bg-gray-100 dark:hover:bg-gray-700"
+                          >
+                            キャンセル
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={isPending}
+                            className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition shadow disabled:opacity-50"
+                          >
+                            {isPending ? '保存中...' : '更新を保存'}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  );
+                }
 
                 return (
                   <div
@@ -790,13 +1006,18 @@ export default function Dashboard() {
                         <div className="font-semibold text-sm sm:text-base">
                           {displayTitle}
                         </div>
-                        <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                          {item.date} {item.paymentMethod ? `| ${item.paymentMethod}` : ''}
+                        <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 flex items-center gap-2">
+                          <span>{item.date}</span>
+                          {item.paymentMethod && (
+                            <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 rounded font-medium text-[11px]">
+                              💳 {item.paymentMethod}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3 sm:gap-4">
                       <span
                         className={`font-bold text-sm sm:text-lg ${
                           isIncome
@@ -807,6 +1028,15 @@ export default function Dashboard() {
                         {isIncome ? '+' : '-'}¥
                         {(item.amount || 0).toLocaleString()}
                       </span>
+
+                      <button
+                        onClick={() => setEditingItem(item)}
+                        disabled={isPending}
+                        className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium p-1 rounded transition"
+                      >
+                        編集
+                      </button>
+
                       <button
                         onClick={() => handleDelete(item.id)}
                         disabled={isPending}
