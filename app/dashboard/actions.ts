@@ -127,6 +127,7 @@ export async function importCsv(formData: FormData) {
     }
 
     revalidatePath('/dashboard');
+    revalidatePath('/import');
     return { success: true, count: rows.length, error: null };
   } catch (error: unknown) {
     console.error('Failed to import CSV:', error);
