@@ -4,6 +4,7 @@ import { useState, useEffect, useTransition, useMemo } from 'react';
 import { getTransactions, addTransaction, deleteTransaction } from './actions';
 import Navbar from '@/app/components/Navbar';
 import { getMonthlyDateRange, formatDateJapanese } from '@/lib/date-utils';
+import Link from 'next/link';
 
 interface TransactionWorkItem {
   id: number;
@@ -264,13 +265,15 @@ export default function Dashboard() {
             </p>
           </div>
 
-          <div className="flex gap-4 items-center">
+          <div className="flex items-center gap-3">
             <Link
-              href="/card-types"
-              className="text-sm text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium"
+              href="/import"
+              className="text-xs bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 font-medium px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm"
             >
-              カード種類管理 →
+              <span>📥</span>
+              <span>CSV取込画面へ</span>
             </Link>
+
             <button
               onClick={() => setShowPeriodSettings(!showPeriodSettings)}
               className="text-xs bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 font-medium px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm"
@@ -303,10 +306,11 @@ export default function Dashboard() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
               {/* Option 1: 15th Preceding Weekday */}
               <div
-                className={`p-4 rounded-xl border cursor-pointer transition ${settingMode === 'precedingWeekday15'
+                className={`p-4 rounded-xl border cursor-pointer transition ${
+                  settingMode === 'precedingWeekday15'
                     ? 'bg-white dark:bg-gray-750 border-blue-500 shadow-sm'
                     : 'bg-white/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700'
-                  }`}
+                }`}
                 onClick={() => handleSettingModeChange('precedingWeekday15')}
               >
                 <div className="flex items-center gap-2 mb-2">
@@ -328,10 +332,11 @@ export default function Dashboard() {
 
               {/* Option 2: Fixed Start Day */}
               <div
-                className={`p-4 rounded-xl border cursor-pointer transition ${settingMode === 'startDay'
-                  ? 'bg-white dark:bg-gray-750 border-blue-500 shadow-sm'
-                  : 'bg-white/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700'
-                  }`}
+                className={`p-4 rounded-xl border cursor-pointer transition ${
+                  settingMode === 'startDay'
+                    ? 'bg-white dark:bg-gray-750 border-blue-500 shadow-sm'
+                    : 'bg-white/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700'
+                }`}
                 onClick={() => handleSettingModeChange('startDay')}
               >
                 <div className="flex items-center gap-2 mb-2">
@@ -359,10 +364,11 @@ export default function Dashboard() {
                         e.stopPropagation();
                         handleStartDayChange(day);
                       }}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${settingMode === 'startDay' && monthStartDay === day
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                        }`}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${
+                        settingMode === 'startDay' && monthStartDay === day
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                      }`}
                     >
                       {day === 1 ? '1日' : `${day}日`}
                     </button>
@@ -387,10 +393,11 @@ export default function Dashboard() {
 
               {/* Option 3: Custom Range */}
               <div
-                className={`p-4 rounded-xl border cursor-pointer transition ${settingMode === 'custom'
-                  ? 'bg-white dark:bg-gray-750 border-blue-500 shadow-sm'
-                  : 'bg-white/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700'
-                  }`}
+                className={`p-4 rounded-xl border cursor-pointer transition ${
+                  settingMode === 'custom'
+                    ? 'bg-white dark:bg-gray-750 border-blue-500 shadow-sm'
+                    : 'bg-white/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700'
+                }`}
                 onClick={() => handleSettingModeChange('custom')}
               >
                 <div className="flex items-center gap-2 mb-2">
@@ -546,8 +553,9 @@ export default function Dashboard() {
               </span>
             </div>
             <div
-              className={`mt-3 text-3xl font-extrabold ${balance >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-600 dark:text-red-400'
-                }`}
+              className={`mt-3 text-3xl font-extrabold ${
+                balance >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-600 dark:text-red-400'
+              }`}
             >
               ¥{balance.toLocaleString()}
             </div>
@@ -770,10 +778,11 @@ export default function Dashboard() {
                   >
                     <div className="flex items-center gap-3 sm:gap-4">
                       <span
-                        className={`text-xs px-2.5 py-1 rounded-full font-semibold ${isIncome
-                          ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300'
-                          : 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300'
-                          }`}
+                        className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
+                          isIncome
+                            ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300'
+                            : 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300'
+                        }`}
                       >
                         {categoryLabel}
                       </span>
@@ -789,10 +798,11 @@ export default function Dashboard() {
 
                     <div className="flex items-center gap-4">
                       <span
-                        className={`font-bold text-sm sm:text-lg ${isIncome
-                          ? 'text-green-600 dark:text-green-400'
-                          : 'text-red-600 dark:text-red-400'
-                          }`}
+                        className={`font-bold text-sm sm:text-lg ${
+                          isIncome
+                            ? 'text-green-600 dark:text-green-400'
+                            : 'text-red-600 dark:text-red-400'
+                        }`}
                       >
                         {isIncome ? '+' : '-'}¥
                         {(item.amount || 0).toLocaleString()}

@@ -5,11 +5,12 @@ import { transactionsWork } from '@/src/db/schema';
 import { eq, desc } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { parseHouseholdCsv } from '@/lib/csv';
-import { getAuthUser } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
 
 export async function getTransactions() {
   try {
-    const user = await getAuthUser();
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
 
     if (user?.id) {
       const list = await db
@@ -34,7 +35,8 @@ export async function getTransactions() {
 
 export async function addTransaction(formData: FormData) {
   try {
-    const user = await getAuthUser();
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
 
     const amountStr = formData.get('amount') as string;
     const type = (formData.get('type') as string) || '支出';
@@ -79,7 +81,8 @@ export async function addTransaction(formData: FormData) {
 
 export async function importCsv(formData: FormData) {
   try {
-    const user = await getAuthUser();
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
 
     const file = formData.get('file') as File | null;
     if (!file) {

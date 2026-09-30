@@ -10,15 +10,6 @@ export const users = pgTable('users', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const cardTypes = pgTable('card_types', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').default(sql`auth.uid()`),
-  name: text('name').notNull(),
-  paymentMethod: text('payment_method'),
-  note: text('note'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
-
 export const transactions = pgTable('transactions', {
   id: uuid('id').primaryKey().defaultRandom(),
   title: text('title').notNull(),
