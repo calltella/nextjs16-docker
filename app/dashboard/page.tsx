@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useTransition, useMemo } from 'react';
-import { getTransactions, addTransaction, updateTransaction, deleteTransaction } from './actions';
+import { getTransactions, updateTransaction, deleteTransaction } from './actions';
 import Navbar from '@/app/components/Navbar';
 import { getMonthlyDateRange, formatDateJapanese } from '@/lib/date-utils';
 import Link from 'next/link';
@@ -21,11 +21,6 @@ interface TransactionWorkItem {
   tag?: string | null;
   createdAt: Date | string;
 }
-
-const CATEGORIES = {
-  支出: ['食費', '日用品', '交通費', '居住費', '光熱費', '娯楽', '交際費', 'その他'],
-  収入: ['給料', '副収入', '臨時収入', 'その他'],
-};
 
 export default function Dashboard() {
   const [items, setItems] = useState<TransactionWorkItem[]>([]);
@@ -80,9 +75,6 @@ export default function Dashboard() {
   // Editing state
   const [editingItem, setEditingItem] = useState<TransactionWorkItem | null>(null);
 
-  // Registration Form state
-  const [type, setType] = useState<'支出' | '収入'>('支出');
-  const [parentCategory, setParentCategory] = useState<string>(CATEGORIES['支出'][0]);
   const [isPending, startTransition] = useTransition();
 
   // Save settings when changed
@@ -175,30 +167,6 @@ export default function Dashboard() {
     setSelectedMonth(today.getMonth() + 1);
   };
 
-  const handleTypeChange = (newType: '支出' | '収入') => {
-    setType(newType);
-    setParentCategory(CATEGORIES[newType][0]);
-  };
-
-  const handleAdd = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setErrorMsg(null);
-    const form = e.currentTarget;
-    const formData = new FormData(form);
-
-    startTransition(async () => {
-      const res = await addTransaction(formData);
-      if (!res.success) {
-        setErrorMsg(res.error || '追加に失敗しました');
-      } else {
-        form.reset();
-        setType('支出');
-        setParentCategory(CATEGORIES['支出'][0]);
-        await loadData();
-      }
-    });
-  };
-
   const handleUpdate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!editingItem) return;
@@ -271,8 +239,6 @@ export default function Dashboard() {
     });
   }, [displayItems]);
 
-  const todayStr = new Date().toISOString().split('T')[0];
-
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 flex flex-col">
       <Navbar />
@@ -296,11 +262,19 @@ export default function Dashboard() {
 
           <div className="flex items-center gap-3">
             <Link
+              href="/register"
+              className="text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow"
+            >
+              <span>✏️</span>
+              <span>収支を登録する</span>
+            </Link>
+
+            <Link
               href="/import"
               className="text-xs bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 font-medium px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm"
             >
               <span>📥</span>
-              <span>CSV取込画面へ</span>
+              <span>CSV取込</span>
             </Link>
 
             <button
@@ -308,7 +282,7 @@ export default function Dashboard() {
               className="text-xs bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 font-medium px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm"
             >
               <span>⚙️</span>
-              <span>{showPeriodSettings ? '期間設定を閉じる' : '月の集計期間の設定'}</span>
+              <span>{showPeriodSettings ? '閉じる' : '期間設定'}</span>
             </button>
           </div>
         </div>
@@ -645,106 +619,6 @@ export default function Dashboard() {
               );
             })}
           </div>
-        </div>
-
-        {/* Transaction Registration Form */}
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
-          <h2 className="text-lg font-bold mb-4">新規収支登録</h2>
-          <form onSubmit={handleAdd} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                区分
-              </label>
-              <select
-                name="type"
-                value={type}
-                onChange={(e) => handleTypeChange(e.target.value as '支出' | '収入')}
-                className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              >
-                <option value="支出">支出</option>
-                <option value="収入">収入</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                カテゴリー
-              </label>
-              <select
-                name="parentCategory"
-                value={parentCategory}
-                onChange={(e) => setParentCategory(e.target.value)}
-                className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              >
-                {CATEGORIES[type].map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                カード・支払い方法
-              </label>
-              <input
-                type="text"
-                name="paymentMethod"
-                list="payment-methods-list"
-                placeholder="例: 楽天カード"
-                className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                メモ
-              </label>
-              <input
-                type="text"
-                name="memo"
-                placeholder="例: スーパー"
-                className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                金額 (円)
-              </label>
-              <input
-                type="number"
-                name="amount"
-                placeholder="例: 1500"
-                min="1"
-                className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                日付
-              </label>
-              <input
-                type="date"
-                name="date"
-                defaultValue={todayStr}
-                required
-                className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-              />
-            </div>
-
-            <div className="lg:col-span-6 flex justify-end">
-              <button
-                type="submit"
-                disabled={isPending}
-                className="px-6 bg-blue-600 hover:bg-blue-700 text-white font-medium p-2.5 rounded-xl transition text-sm shadow disabled:opacity-50"
-              >
-                {isPending ? '追加中...' : '登録する'}
-              </button>
-            </div>
-          </form>
         </div>
 
         {/* Transactions List */}
