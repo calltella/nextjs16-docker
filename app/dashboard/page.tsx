@@ -1,10 +1,49 @@
 'use client';
 
-import { useState, useEffect, useTransition, useMemo } from 'react';
+import { useState, useEffect, useTransition, useMemo, useSyncExternalStore } from 'react';
 import { getTransactions, updateTransaction, deleteTransaction } from './actions';
 import Navbar from '@/app/components/Navbar';
 import { getMonthlyDateRange, formatDateJapanese } from '@/lib/date-utils';
 import Link from 'next/link';
+
+const subscribeStorage = (callback: () => void) => {
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', callback);
+    return () => window.removeEventListener('storage', callback);
+  }
+  return () => {};
+};
+
+const getSettingModeSnapshot = (): 'startDay' | 'precedingWeekday15' | 'custom' => {
+  try {
+    const savedMode = localStorage.getItem('kakeibo_settingMode');
+    if (savedMode === 'startDay' || savedMode === 'precedingWeekday15' || savedMode === 'custom') {
+      return savedMode;
+    }
+  } catch {
+    // Ignore
+  }
+  return 'precedingWeekday15';
+};
+
+const getServerSettingModeSnapshot = (): 'startDay' | 'precedingWeekday15' | 'custom' => 'precedingWeekday15';
+
+const getMonthStartDaySnapshot = (): number => {
+  try {
+    const savedStartDay = localStorage.getItem('kakeibo_monthStartDay');
+    if (savedStartDay) {
+      const parsed = parseInt(savedStartDay, 10);
+      if (!isNaN(parsed) && parsed >= 1 && parsed <= 31) {
+        return parsed;
+      }
+    }
+  } catch {
+    // Ignore
+  }
+  return 1;
+};
+
+const getServerMonthStartDaySnapshot = (): number => 1;
 
 interface TransactionWorkItem {
   id: number;
@@ -32,37 +71,24 @@ export default function Dashboard() {
   const [selectedYear, setSelectedYear] = useState<number>(today.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState<number>(today.getMonth() + 1);
 
-  // Month start/end configuration state
-  const [settingMode, setSettingMode] = useState<'startDay' | 'precedingWeekday15' | 'custom'>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const savedMode = localStorage.getItem('kakeibo_settingMode');
-        if (savedMode === 'startDay' || savedMode === 'precedingWeekday15' || savedMode === 'nearestWeekday15' || savedMode === 'custom') {
-          return 'precedingWeekday15';
-        }
-      } catch {
-        // Ignore
-      }
-    }
-    return 'precedingWeekday15';
-  });
+  // Month start/end configuration state synced with localStorage
+  const savedSettingMode = useSyncExternalStore(
+    subscribeStorage,
+    getSettingModeSnapshot,
+    getServerSettingModeSnapshot
+  );
 
-  const [monthStartDay, setMonthStartDay] = useState<number>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const savedStartDay = localStorage.getItem('kakeibo_monthStartDay');
-        if (savedStartDay) {
-          const parsed = parseInt(savedStartDay, 10);
-          if (!isNaN(parsed) && parsed >= 1 && parsed <= 31) {
-            return parsed;
-          }
-        }
-      } catch {
-        // Ignore
-      }
-    }
-    return 1;
-  });
+  const savedMonthStartDay = useSyncExternalStore(
+    subscribeStorage,
+    getMonthStartDaySnapshot,
+    getServerMonthStartDaySnapshot
+  );
+
+  const [settingModeState, setSettingModeState] = useState<'startDay' | 'precedingWeekday15' | 'custom' | null>(null);
+  const [monthStartDayState, setMonthStartDayState] = useState<number | null>(null);
+
+  const settingMode = settingModeState ?? savedSettingMode;
+  const monthStartDay = monthStartDayState ?? savedMonthStartDay;
 
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
@@ -79,20 +105,22 @@ export default function Dashboard() {
 
   // Save settings when changed
   const handleStartDayChange = (day: number) => {
-    setMonthStartDay(day);
-    setSettingMode('startDay');
+    setMonthStartDayState(day);
+    setSettingModeState('startDay');
     try {
       localStorage.setItem('kakeibo_monthStartDay', String(day));
       localStorage.setItem('kakeibo_settingMode', 'startDay');
+      window.dispatchEvent(new Event('storage'));
     } catch {
       // Ignore
     }
   };
 
   const handleSettingModeChange = (mode: 'startDay' | 'precedingWeekday15' | 'custom') => {
-    setSettingMode(mode);
+    setSettingModeState(mode);
     try {
       localStorage.setItem('kakeibo_settingMode', mode);
+      window.dispatchEvent(new Event('storage'));
     } catch {
       // Ignore
     }
