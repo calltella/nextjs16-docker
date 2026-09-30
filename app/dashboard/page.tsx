@@ -4,7 +4,6 @@ import { useState, useEffect, useTransition, useMemo } from 'react';
 import { getTransactions, addTransaction, deleteTransaction } from './actions';
 import Navbar from '@/app/components/Navbar';
 import { getMonthlyDateRange, formatDateJapanese } from '@/lib/date-utils';
-import Link from 'next/link';
 
 interface TransactionWorkItem {
   id: number;
@@ -38,18 +37,18 @@ export default function Dashboard() {
   const [selectedMonth, setSelectedMonth] = useState<number>(today.getMonth() + 1);
 
   // Month start/end configuration state
-  const [settingMode, setSettingMode] = useState<'startDay' | 'custom'>(() => {
+  const [settingMode, setSettingMode] = useState<'startDay' | 'nearestWeekday15' | 'custom'>(() => {
     if (typeof window !== 'undefined') {
       try {
         const savedMode = localStorage.getItem('kakeibo_settingMode');
-        if (savedMode === 'startDay' || savedMode === 'custom') {
+        if (savedMode === 'startDay' || savedMode === 'nearestWeekday15' || savedMode === 'custom') {
           return savedMode;
         }
       } catch {
         // Ignore
       }
     }
-    return 'startDay';
+    return 'nearestWeekday15';
   });
 
   const [monthStartDay, setMonthStartDay] = useState<number>(() => {
@@ -93,7 +92,7 @@ export default function Dashboard() {
     }
   };
 
-  const handleSettingModeChange = (mode: 'startDay' | 'custom') => {
+  const handleSettingModeChange = (mode: 'startDay' | 'nearestWeekday15' | 'custom') => {
     setSettingMode(mode);
     try {
       localStorage.setItem('kakeibo_settingMode', mode);
@@ -107,7 +106,10 @@ export default function Dashboard() {
     if (settingMode === 'custom' && customStartDate && customEndDate) {
       return { startDate: customStartDate, endDate: customEndDate };
     }
-    return getMonthlyDateRange(selectedYear, selectedMonth, monthStartDay);
+    if (settingMode === 'nearestWeekday15') {
+      return getMonthlyDateRange(selectedYear, selectedMonth, 15, true);
+    }
+    return getMonthlyDateRange(selectedYear, selectedMonth, monthStartDay, false);
   }, [selectedYear, selectedMonth, monthStartDay, settingMode, customStartDate, customEndDate]);
 
   const loadData = async () => {
@@ -298,12 +300,37 @@ export default function Dashboard() {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-              {/* Option 1: Start Day */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+              {/* Option 1: 15th Nearest Weekday */}
               <div
-                className={`p-4 rounded-xl border cursor-pointer transition ${settingMode === 'startDay'
+                className={`p-4 rounded-xl border cursor-pointer transition ${settingMode === 'nearestWeekday15'
                     ? 'bg-white dark:bg-gray-750 border-blue-500 shadow-sm'
                     : 'bg-white/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700'
+                  }`}
+                onClick={() => handleSettingModeChange('nearestWeekday15')}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <input
+                    type="radio"
+                    name="settingMode"
+                    checked={settingMode === 'nearestWeekday15'}
+                    onChange={() => handleSettingModeChange('nearestWeekday15')}
+                    className="text-blue-600 focus:ring-blue-500"
+                  />
+                  <label className="text-sm font-bold text-gray-800 dark:text-gray-200 cursor-pointer">
+                    15日始まり (土日祝は直近平日)
+                  </label>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 ml-6">
+                  毎月15日を開始日とします。15日が土曜日・日曜日・祝日の場合は、直近の平日に自動補正されます。
+                </p>
+              </div>
+
+              {/* Option 2: Fixed Start Day */}
+              <div
+                className={`p-4 rounded-xl border cursor-pointer transition ${settingMode === 'startDay'
+                  ? 'bg-white dark:bg-gray-750 border-blue-500 shadow-sm'
+                  : 'bg-white/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700'
                   }`}
                 onClick={() => handleSettingModeChange('startDay')}
               >
@@ -316,15 +343,15 @@ export default function Dashboard() {
                     className="text-blue-600 focus:ring-blue-500"
                   />
                   <label className="text-sm font-bold text-gray-800 dark:text-gray-200 cursor-pointer">
-                    毎月の開始日を指定 (1日〜31日)
+                    日付指定 (1日〜31日)
                   </label>
                 </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 ml-6">
-                  指定した日付から翌月前日までを「月」として自動集計します。（例: 25日指定 → 2月25日〜3月24日）
+                  固定の日付から翌月前日までを集計範囲とします。
                 </p>
 
                 <div className="ml-6 flex flex-wrap items-center gap-2">
-                  {[1, 10, 15, 20, 25].map((day) => (
+                  {[1, 10, 20, 25].map((day) => (
                     <button
                       key={day}
                       type="button"
@@ -332,16 +359,16 @@ export default function Dashboard() {
                         e.stopPropagation();
                         handleStartDayChange(day);
                       }}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${settingMode === 'startDay' && monthStartDay === day
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${settingMode === 'startDay' && monthStartDay === day
                           ? 'bg-blue-600 text-white'
                           : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                         }`}
                     >
-                      {day === 1 ? '1日 (毎月1日〜)' : `${day}日始まり`}
+                      {day === 1 ? '1日' : `${day}日`}
                     </button>
                   ))}
 
-                  <div className="flex items-center gap-1 ml-2">
+                  <div className="flex items-center gap-1">
                     <input
                       type="number"
                       min="1"
@@ -351,18 +378,18 @@ export default function Dashboard() {
                         const val = parseInt(e.target.value, 10);
                         if (!isNaN(val)) handleStartDayChange(val);
                       }}
-                      className="w-16 p-1.5 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg text-xs text-center"
+                      className="w-12 p-1 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg text-xs text-center"
                     />
-                    <span className="text-xs text-gray-500">日始まり</span>
+                    <span className="text-[11px] text-gray-500">日</span>
                   </div>
                 </div>
               </div>
 
-              {/* Option 2: Custom Range */}
+              {/* Option 3: Custom Range */}
               <div
                 className={`p-4 rounded-xl border cursor-pointer transition ${settingMode === 'custom'
-                    ? 'bg-white dark:bg-gray-750 border-blue-500 shadow-sm'
-                    : 'bg-white/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700'
+                  ? 'bg-white dark:bg-gray-750 border-blue-500 shadow-sm'
+                  : 'bg-white/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700'
                   }`}
                 onClick={() => handleSettingModeChange('custom')}
               >
@@ -744,8 +771,8 @@ export default function Dashboard() {
                     <div className="flex items-center gap-3 sm:gap-4">
                       <span
                         className={`text-xs px-2.5 py-1 rounded-full font-semibold ${isIncome
-                            ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300'
-                            : 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300'
+                          ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300'
+                          : 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300'
                           }`}
                       >
                         {categoryLabel}
@@ -763,8 +790,8 @@ export default function Dashboard() {
                     <div className="flex items-center gap-4">
                       <span
                         className={`font-bold text-sm sm:text-lg ${isIncome
-                            ? 'text-green-600 dark:text-green-400'
-                            : 'text-red-600 dark:text-red-400'
+                          ? 'text-green-600 dark:text-green-400'
+                          : 'text-red-600 dark:text-red-400'
                           }`}
                       >
                         {isIncome ? '+' : '-'}¥
