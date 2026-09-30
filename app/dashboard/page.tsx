@@ -4,6 +4,7 @@ import { useState, useEffect, useTransition, useMemo } from 'react';
 import { getTransactions, addTransaction, deleteTransaction } from './actions';
 import Navbar from '@/app/components/Navbar';
 import { getMonthlyDateRange, formatDateJapanese } from '@/lib/date-utils';
+import Link from 'next/link';
 
 interface TransactionWorkItem {
   id: number;
