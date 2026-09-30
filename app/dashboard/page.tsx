@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useTransition } from 'react';
-import { getTransactions, addTransaction, deleteTransaction, importCsv } from './actions';
-import Link from 'next/link';
+import { useState, useEffect, useTransition, useMemo } from 'react';
+import { getTransactions, addTransaction, deleteTransaction } from './actions';
+import Navbar from '@/app/components/Navbar';
+import { getMonthlyDateRange, formatDateJapanese } from '@/lib/date-utils';
 
 interface TransactionWorkItem {
   id: number;
@@ -29,11 +30,84 @@ export default function Dashboard() {
   const [items, setItems] = useState<TransactionWorkItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Month navigation state
+  const today = new Date();
+  const [selectedYear, setSelectedYear] = useState<number>(today.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState<number>(today.getMonth() + 1);
+
+  // Month start/end configuration state
+  const [settingMode, setSettingMode] = useState<'startDay' | 'custom'>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedMode = localStorage.getItem('kakeibo_settingMode');
+        if (savedMode === 'startDay' || savedMode === 'custom') {
+          return savedMode;
+        }
+      } catch {
+        // Ignore
+      }
+    }
+    return 'startDay';
+  });
+
+  const [monthStartDay, setMonthStartDay] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const savedStartDay = localStorage.getItem('kakeibo_monthStartDay');
+        if (savedStartDay) {
+          const parsed = parseInt(savedStartDay, 10);
+          if (!isNaN(parsed) && parsed >= 1 && parsed <= 31) {
+            return parsed;
+          }
+        }
+      } catch {
+        // Ignore
+      }
+    }
+    return 1;
+  });
+
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
+  const [showPeriodSettings, setShowPeriodSettings] = useState<boolean>(false);
+
+  // Filter mode
+  const [showOnlyPeriodItems, setShowOnlyPeriodItems] = useState<boolean>(true);
+
+  // Form state
   const [type, setType] = useState<'支出' | '収入'>('支出');
-  const [parentCategory, setParentCategory] = useState(CATEGORIES['支出'][0]);
+  const [parentCategory, setParentCategory] = useState<string>(CATEGORIES['支出'][0]);
   const [isPending, startTransition] = useTransition();
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  // Save settings when changed
+  const handleStartDayChange = (day: number) => {
+    setMonthStartDay(day);
+    setSettingMode('startDay');
+    try {
+      localStorage.setItem('kakeibo_monthStartDay', String(day));
+      localStorage.setItem('kakeibo_settingMode', 'startDay');
+    } catch {
+      // Ignore
+    }
+  };
+
+  const handleSettingModeChange = (mode: 'startDay' | 'custom') => {
+    setSettingMode(mode);
+    try {
+      localStorage.setItem('kakeibo_settingMode', mode);
+    } catch {
+      // Ignore
+    }
+  };
+
+  // Compute calculated date range
+  const computedRange = useMemo(() => {
+    if (settingMode === 'custom' && customStartDate && customEndDate) {
+      return { startDate: customStartDate, endDate: customEndDate };
+    }
+    return getMonthlyDateRange(selectedYear, selectedMonth, monthStartDay);
+  }, [selectedYear, selectedMonth, monthStartDay, settingMode, customStartDate, customEndDate]);
 
   const loadData = async () => {
     const res = await getTransactions();
@@ -62,6 +136,29 @@ export default function Dashboard() {
     };
   }, []);
 
+  const handlePrevMonth = () => {
+    if (selectedMonth === 1) {
+      setSelectedYear((prev) => prev - 1);
+      setSelectedMonth(12);
+    } else {
+      setSelectedMonth((prev) => prev - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (selectedMonth === 12) {
+      setSelectedYear((prev) => prev + 1);
+      setSelectedMonth(1);
+    } else {
+      setSelectedMonth((prev) => prev + 1);
+    }
+  };
+
+  const handleCurrentMonth = () => {
+    setSelectedYear(today.getFullYear());
+    setSelectedMonth(today.getMonth() + 1);
+  };
+
   const handleTypeChange = (newType: '支出' | '収入') => {
     setType(newType);
     setParentCategory(CATEGORIES[newType][0]);
@@ -70,7 +167,6 @@ export default function Dashboard() {
   const handleAdd = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setErrorMsg(null);
-    setSuccessMsg(null);
     const form = e.currentTarget;
     const formData = new FormData(form);
 
@@ -82,35 +178,6 @@ export default function Dashboard() {
         form.reset();
         setType('支出');
         setParentCategory(CATEGORIES['支出'][0]);
-        await loadData();
-      }
-    });
-  };
-
-  const handleImportCsv = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setErrorMsg(null);
-    setSuccessMsg(null);
-
-    if (!selectedFile) {
-      setErrorMsg('CSVファイルを選択してください');
-      return;
-    }
-
-    if (!confirm('既存の全データが削除され、取り込んだCSVファイルの内容でtransactions_workテーブルが上書きされます。実行しますか？')) {
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append('file', selectedFile);
-
-    startTransition(async () => {
-      const res = await importCsv(formData);
-      if (!res.success) {
-        setErrorMsg(res.error || 'CSVの取り込みに失敗しました');
-      } else {
-        setSuccessMsg(`transactions_work テーブルに CSV を取り込みました (${res.count} 件)`);
-        setSelectedFile(null);
         await loadData();
       }
     });
@@ -128,29 +195,72 @@ export default function Dashboard() {
     });
   };
 
-  const totalIncome = items
-    .filter((i) => i.type === '収入' || i.type === 'income')
-    .reduce((sum, i) => sum + (i.amount || 0), 0);
+  // Filter transactions by period
+  const filteredItems = useMemo(() => {
+    return items.filter((item) => {
+      if (!item.date) return false;
+      return item.date >= computedRange.startDate && item.date <= computedRange.endDate;
+    });
+  }, [items, computedRange]);
 
-  const totalExpense = items
-    .filter((i) => i.type === '支出' || i.type === 'expense')
-    .reduce((sum, i) => sum + (i.amount || 0), 0);
+  const displayItems = showOnlyPeriodItems ? filteredItems : items;
+
+  // Aggregation for period
+  const totalIncome = useMemo(() => {
+    return filteredItems
+      .filter((i) => i.type === '収入' || i.type === 'income')
+      .reduce((sum, i) => sum + (i.amount || 0), 0);
+  }, [filteredItems]);
+
+  const totalExpense = useMemo(() => {
+    return filteredItems
+      .filter((i) => i.type === '支出' || i.type === 'expense')
+      .reduce((sum, i) => sum + (i.amount || 0), 0);
+  }, [filteredItems]);
 
   const balance = totalIncome - totalExpense;
+
+  // Category breakdowns for period
+  const categoryExpenses = useMemo(() => {
+    const map: Record<string, number> = {};
+    filteredItems
+      .filter((i) => i.type === '支出' || i.type === 'expense')
+      .forEach((i) => {
+        const cat = i.parentCategory || 'その他';
+        map[cat] = (map[cat] || 0) + (i.amount || 0);
+      });
+
+    return Object.entries(map).sort((a, b) => b[1] - a[1]);
+  }, [filteredItems]);
+
+  const categoryIncomes = useMemo(() => {
+    const map: Record<string, number> = {};
+    filteredItems
+      .filter((i) => i.type === '収入' || i.type === 'income')
+      .forEach((i) => {
+        const cat = i.parentCategory || 'その他';
+        map[cat] = (map[cat] || 0) + (i.amount || 0);
+      });
+
+    return Object.entries(map).sort((a, b) => b[1] - a[1]);
+  }, [filteredItems]);
 
   const todayStr = new Date().toISOString().split('T')[0];
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 p-4 sm:p-8">
-      <div className="max-w-4xl mx-auto space-y-8">
-        {/* Header */}
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 flex flex-col">
+      <Navbar />
+
+      <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-8 space-y-8">
+        {/* Title Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-gray-200 dark:border-gray-800">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">家計簿ダッシュボード (transactions_work)</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">月別家計簿・集計</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              transactions_work テーブルの記録・管理
+              月ごとの収支の確認・分析・集計を行えます。
             </p>
           </div>
+
           <div className="flex gap-4 items-center">
             <Link
               href="/card-types"
@@ -158,89 +268,353 @@ export default function Dashboard() {
             >
               カード種類管理 →
             </Link>
-            <Link
-              href="/"
-              className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+            <button
+              onClick={() => setShowPeriodSettings(!showPeriodSettings)}
+              className="text-xs bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 font-medium px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 shadow-sm"
             >
-              ← ホームに戻る
-            </Link>
+              <span>⚙️</span>
+              <span>{showPeriodSettings ? '期間設定を閉じる' : '月の集計期間の設定'}</span>
+            </button>
           </div>
         </div>
 
         {errorMsg && (
-          <div className="p-4 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded-lg text-sm">
-            {errorMsg}
+          <div className="p-4 bg-red-100 dark:bg-red-900/40 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 rounded-xl text-sm flex justify-between items-center">
+            <span>{errorMsg}</span>
+            <button onClick={() => setErrorMsg(null)} className="font-bold">✕</button>
           </div>
         )}
 
-        {successMsg && (
-          <div className="p-4 bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 rounded-lg text-sm">
-            {successMsg}
+        {/* Month Settings Drawer / Card */}
+        {showPeriodSettings && (
+          <div className="p-6 bg-blue-50/70 dark:bg-gray-800/80 border border-blue-200 dark:border-gray-700 rounded-2xl space-y-4 transition shadow-sm">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-sm text-blue-900 dark:text-blue-300 flex items-center gap-2">
+                <span>🗓️</span> 月の始まり・終わり (締め日) の設定
+              </h3>
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                給料日等に合わせた月集計範囲の設定
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+              {/* Option 1: Start Day */}
+              <div
+                className={`p-4 rounded-xl border cursor-pointer transition ${settingMode === 'startDay'
+                    ? 'bg-white dark:bg-gray-750 border-blue-500 shadow-sm'
+                    : 'bg-white/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700'
+                  }`}
+                onClick={() => handleSettingModeChange('startDay')}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <input
+                    type="radio"
+                    name="settingMode"
+                    checked={settingMode === 'startDay'}
+                    onChange={() => handleSettingModeChange('startDay')}
+                    className="text-blue-600 focus:ring-blue-500"
+                  />
+                  <label className="text-sm font-bold text-gray-800 dark:text-gray-200 cursor-pointer">
+                    毎月の開始日を指定 (1日〜31日)
+                  </label>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 ml-6">
+                  指定した日付から翌月前日までを「月」として自動集計します。（例: 25日指定 → 2月25日〜3月24日）
+                </p>
+
+                <div className="ml-6 flex flex-wrap items-center gap-2">
+                  {[1, 10, 15, 20, 25].map((day) => (
+                    <button
+                      key={day}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStartDayChange(day);
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${settingMode === 'startDay' && monthStartDay === day
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        }`}
+                    >
+                      {day === 1 ? '1日 (毎月1日〜)' : `${day}日始まり`}
+                    </button>
+                  ))}
+
+                  <div className="flex items-center gap-1 ml-2">
+                    <input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={monthStartDay}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        if (!isNaN(val)) handleStartDayChange(val);
+                      }}
+                      className="w-16 p-1.5 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg text-xs text-center"
+                    />
+                    <span className="text-xs text-gray-500">日始まり</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Option 2: Custom Range */}
+              <div
+                className={`p-4 rounded-xl border cursor-pointer transition ${settingMode === 'custom'
+                    ? 'bg-white dark:bg-gray-750 border-blue-500 shadow-sm'
+                    : 'bg-white/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700'
+                  }`}
+                onClick={() => handleSettingModeChange('custom')}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <input
+                    type="radio"
+                    name="settingMode"
+                    checked={settingMode === 'custom'}
+                    onChange={() => handleSettingModeChange('custom')}
+                    className="text-blue-600 focus:ring-blue-500"
+                  />
+                  <label className="text-sm font-bold text-gray-800 dark:text-gray-200 cursor-pointer">
+                    任意の日付範囲を個別指定
+                  </label>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 ml-6">
+                  開始日と終了日を自由に選んで集計できます。
+                </p>
+
+                <div className="ml-6 grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] text-gray-500 mb-1">開始日</label>
+                    <input
+                      type="date"
+                      value={customStartDate}
+                      onChange={(e) => {
+                        setCustomStartDate(e.target.value);
+                        handleSettingModeChange('custom');
+                      }}
+                      className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-500 mb-1">終了日</label>
+                    <input
+                      type="date"
+                      value={customEndDate}
+                      onChange={(e) => {
+                        setCustomEndDate(e.target.value);
+                        handleSettingModeChange('custom');
+                      }}
+                      className="w-full p-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
-        {/* CSV Import Card */}
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
-          <h2 className="text-lg font-bold mb-2">CSVファイルからの取込（transactions_work へ上書き）</h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-            家計簿のCSVを取り込み、public.transactions_work テーブルに格納します。
-          </p>
-          <form onSubmit={handleImportCsv} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
-            <input
-              type="file"
-              accept=".csv"
-              onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-              className="block w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 dark:file:bg-blue-900/40 dark:file:text-blue-300 hover:file:bg-blue-100 cursor-pointer"
-            />
-            <button
-              type="submit"
-              disabled={isPending || !selectedFile}
-              className="whitespace-nowrap bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-4 py-2.5 rounded-lg transition text-sm disabled:opacity-50"
-            >
-              {isPending ? '取り込み中...' : 'CSVを取り込んで上書き'}
-            </button>
-          </form>
+        {/* Month Picker / Period Navigation Card */}
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 space-y-4">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            {/* Left Month Switcher */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handlePrevMonth}
+                className="p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-750 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm font-semibold transition"
+                title="前月"
+              >
+                ← 前月
+              </button>
+
+              <div className="flex items-center gap-2 px-3 py-1 bg-gray-50 dark:bg-gray-750 rounded-xl border border-gray-200 dark:border-gray-700">
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(parseInt(e.target.value, 10))}
+                  className="bg-transparent text-lg font-bold focus:outline-none cursor-pointer"
+                >
+                  {[selectedYear - 2, selectedYear - 1, selectedYear, selectedYear + 1, selectedYear + 2].map((y) => (
+                    <option key={y} value={y} className="dark:bg-gray-800">
+                      {y}年
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(parseInt(e.target.value, 10))}
+                  className="bg-transparent text-lg font-bold text-blue-600 dark:text-blue-400 focus:outline-none cursor-pointer"
+                >
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                    <option key={m} value={m} className="dark:bg-gray-800">
+                      {m}月
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                onClick={handleNextMonth}
+                className="p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-750 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm font-semibold transition"
+                title="次月"
+              >
+                次月 →
+              </button>
+
+              <button
+                onClick={handleCurrentMonth}
+                className="px-3 py-2 rounded-xl text-xs font-medium border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+              >
+                今月
+              </button>
+            </div>
+
+            {/* Target Date Period Badge */}
+            <div className="text-center sm:text-right">
+              <span className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-xs font-bold border border-blue-200 dark:border-blue-800/50">
+                <span>📅 集計対象期間:</span>
+                <span>
+                  {formatDateJapanese(computedRange.startDate)} 〜 {formatDateJapanese(computedRange.endDate)}
+                </span>
+              </span>
+            </div>
+          </div>
         </div>
 
-        {/* Summary Cards */}
+        {/* Monthly Summary Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
-            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-              総収入
-            </span>
-            <div className="mt-2 text-2xl font-extrabold text-green-600 dark:text-green-400">
+          <div className="p-6 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+            <div className="flex items-center justify-between text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <span>当月 総収入</span>
+              <span className="p-1.5 bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-300 rounded-lg">
+                💰
+              </span>
+            </div>
+            <div className="mt-3 text-3xl font-extrabold text-green-600 dark:text-green-400">
               ¥{totalIncome.toLocaleString()}
             </div>
+            <p className="text-[11px] text-gray-400 mt-1">
+              対象期間内の収入合計
+            </p>
           </div>
 
-          <div className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
-            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-              総支出
-            </span>
-            <div className="mt-2 text-2xl font-extrabold text-red-600 dark:text-red-400">
+          <div className="p-6 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+            <div className="flex items-center justify-between text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <span>当月 総支出</span>
+              <span className="p-1.5 bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-300 rounded-lg">
+                💸
+              </span>
+            </div>
+            <div className="mt-3 text-3xl font-extrabold text-red-600 dark:text-red-400">
               ¥{totalExpense.toLocaleString()}
             </div>
+            <p className="text-[11px] text-gray-400 mt-1">
+              対象期間内の支出合計
+            </p>
           </div>
 
-          <div className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
-            <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-              収支バランス
-            </span>
+          <div className="p-6 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+            <div className="flex items-center justify-between text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <span>当月 収支バランス</span>
+              <span className="p-1.5 bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 rounded-lg">
+                ⚖️
+              </span>
+            </div>
             <div
-              className={`mt-2 text-2xl font-extrabold ${
-                balance >= 0
-                  ? 'text-blue-600 dark:text-blue-400'
-                  : 'text-red-600 dark:text-red-400'
-              }`}
+              className={`mt-3 text-3xl font-extrabold ${balance >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-600 dark:text-red-400'
+                }`}
             >
               ¥{balance.toLocaleString()}
             </div>
+            <p className="text-[11px] text-gray-400 mt-1">
+              {balance >= 0 ? '黒字' : '赤字'}
+            </p>
           </div>
         </div>
 
-        {/* Transaction Input Form */}
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
-          <h2 className="text-lg font-bold mb-4">収支の登録</h2>
+        {/* Category Breakdown Card */}
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 space-y-6">
+          <h2 className="text-lg font-bold flex items-center gap-2">
+            <span>📊</span> カテゴリ別集計 (当月)
+          </h2>
+
+          {categoryExpenses.length === 0 && categoryIncomes.length === 0 ? (
+            <div className="p-6 text-center text-gray-400 text-sm">
+              選択した対象期間のデータがありません。
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* Expense Breakdown */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-bold text-red-600 dark:text-red-400 flex items-center justify-between border-b pb-2 dark:border-gray-700">
+                  <span>支出内訳</span>
+                  <span>計 ¥{totalExpense.toLocaleString()}</span>
+                </h3>
+
+                {categoryExpenses.length === 0 ? (
+                  <p className="text-xs text-gray-400">支出データなし</p>
+                ) : (
+                  <div className="space-y-3">
+                    {categoryExpenses.map(([catName, amount]) => {
+                      const pct = totalExpense > 0 ? Math.round((amount / totalExpense) * 100) : 0;
+                      return (
+                        <div key={catName} className="space-y-1">
+                          <div className="flex justify-between text-xs font-medium">
+                            <span className="text-gray-700 dark:text-gray-300">{catName}</span>
+                            <span className="font-bold">
+                              ¥{amount.toLocaleString()} <span className="text-gray-400 font-normal">({pct}%)</span>
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-100 dark:bg-gray-700 h-2 rounded-full overflow-hidden">
+                            <div
+                              className="bg-red-500 h-2 rounded-full transition-all duration-500"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Income Breakdown */}
+              <div className="space-y-4">
+                <h3 className="text-sm font-bold text-green-600 dark:text-green-400 flex items-center justify-between border-b pb-2 dark:border-gray-700">
+                  <span>収入内訳</span>
+                  <span>計 ¥{totalIncome.toLocaleString()}</span>
+                </h3>
+
+                {categoryIncomes.length === 0 ? (
+                  <p className="text-xs text-gray-400">収入データなし</p>
+                ) : (
+                  <div className="space-y-3">
+                    {categoryIncomes.map(([catName, amount]) => {
+                      const pct = totalIncome > 0 ? Math.round((amount / totalIncome) * 100) : 0;
+                      return (
+                        <div key={catName} className="space-y-1">
+                          <div className="flex justify-between text-xs font-medium">
+                            <span className="text-gray-700 dark:text-gray-300">{catName}</span>
+                            <span className="font-bold">
+                              ¥{amount.toLocaleString()} <span className="text-gray-400 font-normal">({pct}%)</span>
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-100 dark:bg-gray-700 h-2 rounded-full overflow-hidden">
+                            <div
+                              className="bg-green-500 h-2 rounded-full transition-all duration-500"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Transaction Registration Form */}
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+          <h2 className="text-lg font-bold mb-4">新規収支登録</h2>
           <form onSubmit={handleAdd} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -250,7 +624,7 @@ export default function Dashboard() {
                 name="type"
                 value={type}
                 onChange={(e) => handleTypeChange(e.target.value as '支出' | '収入')}
-                className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
               >
                 <option value="支出">支出</option>
                 <option value="収入">収入</option>
@@ -259,13 +633,13 @@ export default function Dashboard() {
 
             <div>
               <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                親カテゴリー
+                カテゴリー
               </label>
               <select
                 name="parentCategory"
                 value={parentCategory}
                 onChange={(e) => setParentCategory(e.target.value)}
-                className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
               >
                 {CATEGORIES[type].map((cat) => (
                   <option key={cat} value={cat}>
@@ -282,8 +656,8 @@ export default function Dashboard() {
               <input
                 type="text"
                 name="memo"
-                placeholder="例: スーパーでの買い物"
-                className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                placeholder="例: スーパー"
+                className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
 
@@ -296,7 +670,7 @@ export default function Dashboard() {
                 name="amount"
                 placeholder="例: 1500"
                 min="1"
-                className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
 
@@ -309,7 +683,7 @@ export default function Dashboard() {
                 name="date"
                 defaultValue={todayStr}
                 required
-                className="w-full p-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
 
@@ -317,7 +691,7 @@ export default function Dashboard() {
               <button
                 type="submit"
                 disabled={isPending}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium p-2.5 rounded-lg transition text-sm disabled:opacity-50"
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium p-2.5 rounded-xl transition text-sm shadow disabled:opacity-50"
               >
                 {isPending ? '追加中...' : '登録する'}
               </button>
@@ -326,23 +700,37 @@ export default function Dashboard() {
         </div>
 
         {/* Transactions List */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-          <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
-            <h2 className="text-lg font-bold">収支履歴 (transactions_work)</h2>
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              全 {items.length} 件
-            </span>
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+          <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h2 className="text-lg font-bold">収支明細</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                {showOnlyPeriodItems ? '当月対象期間の明細のみ表示中' : '全期間の明細を表示中'}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowOnlyPeriodItems(!showOnlyPeriodItems)}
+                className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600 transition"
+              >
+                {showOnlyPeriodItems ? '全明細を表示する' : '当月のみに絞り込む'}
+              </button>
+              <span className="text-xs font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2.5 py-1 rounded-full">
+                {displayItems.length} 件
+              </span>
+            </div>
           </div>
 
           {loading ? (
             <div className="p-8 text-center text-gray-500 text-sm">読み込み中...</div>
-          ) : items.length === 0 ? (
+          ) : displayItems.length === 0 ? (
             <div className="p-8 text-center text-gray-500 text-sm">
-              明細がありません。上のフォームから登録するかCSVを取り込んでください。
+              明細がありません。上のフォームから登録するか、CSV取込画面からデータを取り込んでください。
             </div>
           ) : (
             <div className="divide-y divide-gray-100 dark:divide-gray-700">
-              {items.map((item) => {
+              {displayItems.map((item) => {
                 const categoryLabel = item.childCategory || item.parentCategory || 'その他';
                 const displayTitle = item.memo || item.note || item.location || categoryLabel;
                 const isIncome = item.type === '収入' || item.type === 'income';
@@ -354,11 +742,10 @@ export default function Dashboard() {
                   >
                     <div className="flex items-center gap-3 sm:gap-4">
                       <span
-                        className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                          isIncome
+                        className={`text-xs px-2.5 py-1 rounded-full font-semibold ${isIncome
                             ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300'
                             : 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300'
-                        }`}
+                          }`}
                       >
                         {categoryLabel}
                       </span>
@@ -374,11 +761,10 @@ export default function Dashboard() {
 
                     <div className="flex items-center gap-4">
                       <span
-                        className={`font-bold text-sm sm:text-lg ${
-                          isIncome
+                        className={`font-bold text-sm sm:text-lg ${isIncome
                             ? 'text-green-600 dark:text-green-400'
                             : 'text-red-600 dark:text-red-400'
-                        }`}
+                          }`}
                       >
                         {isIncome ? '+' : '-'}¥
                         {(item.amount || 0).toLocaleString()}
@@ -398,7 +784,7 @@ export default function Dashboard() {
             </div>
           )}
         </div>
-      </div>
+      </main>
     </div>
   );
 }
