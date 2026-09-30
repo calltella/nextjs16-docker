@@ -261,30 +261,15 @@ export default function Dashboard() {
 
   const balance = totalIncome - totalExpense;
 
-  // Category breakdowns for period
-  const categoryExpenses = useMemo(() => {
-    const map: Record<string, number> = {};
-    periodItems
-      .filter((i) => i.type === '支出' || i.type === 'expense')
-      .forEach((i) => {
-        const cat = i.parentCategory || 'その他';
-        map[cat] = (map[cat] || 0) + (i.amount || 0);
-      });
-
-    return Object.entries(map).sort((a, b) => b[1] - a[1]);
-  }, [periodItems]);
-
-  const categoryIncomes = useMemo(() => {
-    const map: Record<string, number> = {};
-    periodItems
-      .filter((i) => i.type === '収入' || i.type === 'income')
-      .forEach((i) => {
-        const cat = i.parentCategory || 'その他';
-        map[cat] = (map[cat] || 0) + (i.amount || 0);
-      });
-
-    return Object.entries(map).sort((a, b) => b[1] - a[1]);
-  }, [periodItems]);
+  // Sort items in ascending order by date (oldest first)
+  const sortedDisplayItems = useMemo(() => {
+    return [...displayItems].sort((a, b) => {
+      if (a.date !== b.date) {
+        return (a.date || '').localeCompare(b.date || '');
+      }
+      return a.id - b.id;
+    });
+  }, [displayItems]);
 
   const todayStr = new Date().toISOString().split('T')[0];
 
@@ -662,89 +647,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Category Breakdown Card */}
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 space-y-6">
-          <h2 className="text-lg font-bold flex items-center gap-2">
-            <span>📊</span> カテゴリ別集計 (当月)
-          </h2>
-
-          {categoryExpenses.length === 0 && categoryIncomes.length === 0 ? (
-            <div className="p-6 text-center text-gray-400 text-sm">
-              選択した対象期間のデータがありません。
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {/* Expense Breakdown */}
-              <div className="space-y-4">
-                <h3 className="text-sm font-bold text-red-600 dark:text-red-400 flex items-center justify-between border-b pb-2 dark:border-gray-700">
-                  <span>支出内訳</span>
-                  <span>計 ¥{totalExpense.toLocaleString()}</span>
-                </h3>
-
-                {categoryExpenses.length === 0 ? (
-                  <p className="text-xs text-gray-400">支出データなし</p>
-                ) : (
-                  <div className="space-y-3">
-                    {categoryExpenses.map(([catName, amount]) => {
-                      const pct = totalExpense > 0 ? Math.round((amount / totalExpense) * 100) : 0;
-                      return (
-                        <div key={catName} className="space-y-1">
-                          <div className="flex justify-between text-xs font-medium">
-                            <span className="text-gray-700 dark:text-gray-300">{catName}</span>
-                            <span className="font-bold">
-                              ¥{amount.toLocaleString()} <span className="text-gray-400 font-normal">({pct}%)</span>
-                            </span>
-                          </div>
-                          <div className="w-full bg-gray-100 dark:bg-gray-700 h-2 rounded-full overflow-hidden">
-                            <div
-                              className="bg-red-500 h-2 rounded-full transition-all duration-500"
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Income Breakdown */}
-              <div className="space-y-4">
-                <h3 className="text-sm font-bold text-green-600 dark:text-green-400 flex items-center justify-between border-b pb-2 dark:border-gray-700">
-                  <span>収入内訳</span>
-                  <span>計 ¥{totalIncome.toLocaleString()}</span>
-                </h3>
-
-                {categoryIncomes.length === 0 ? (
-                  <p className="text-xs text-gray-400">収入データなし</p>
-                ) : (
-                  <div className="space-y-3">
-                    {categoryIncomes.map(([catName, amount]) => {
-                      const pct = totalIncome > 0 ? Math.round((amount / totalIncome) * 100) : 0;
-                      return (
-                        <div key={catName} className="space-y-1">
-                          <div className="flex justify-between text-xs font-medium">
-                            <span className="text-gray-700 dark:text-gray-300">{catName}</span>
-                            <span className="font-bold">
-                              ¥{amount.toLocaleString()} <span className="text-gray-400 font-normal">({pct}%)</span>
-                            </span>
-                          </div>
-                          <div className="w-full bg-gray-100 dark:bg-gray-700 h-2 rounded-full overflow-hidden">
-                            <div
-                              className="bg-green-500 h-2 rounded-full transition-all duration-500"
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
         {/* Transaction Registration Form */}
         <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
           <h2 className="text-lg font-bold mb-4">新規収支登録</h2>
@@ -871,13 +773,13 @@ export default function Dashboard() {
 
           {loading ? (
             <div className="p-8 text-center text-gray-500 text-sm">読み込み中...</div>
-          ) : displayItems.length === 0 ? (
+          ) : sortedDisplayItems.length === 0 ? (
             <div className="p-8 text-center text-gray-500 text-sm">
               該当する明細がありません。上のフォームから登録するか、CSV取込画面からデータを取り込んでください。
             </div>
           ) : (
             <div className="divide-y divide-gray-100 dark:divide-gray-700">
-              {displayItems.map((item) => {
+              {sortedDisplayItems.map((item) => {
                 const isEditing = editingItem?.id === item.id;
                 const categoryLabel = item.childCategory || item.parentCategory || 'その他';
                 const displayTitle = item.memo || item.note || item.location || categoryLabel;
