@@ -180,10 +180,45 @@ export async function deleteTransaction(id: number) {
   try {
     await db.delete(transactionsWork).where(eq(transactionsWork.id, id));
     revalidatePath('/dashboard');
+    revalidatePath('/cards');
     return { success: true, error: null };
   } catch (error: unknown) {
     console.error('Failed to delete transaction:', error);
     const message = error instanceof Error ? error.message : '取引の削除に失敗しました';
+    return { success: false, error: message };
+  }
+}
+
+export async function updatePaymentMethodName(oldName: string, newName: string) {
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!oldName || !newName || oldName.trim() === newName.trim()) {
+      return { success: false, error: '変更前後のカード名を入力してください' };
+    }
+
+    const trimmedOld = oldName.trim();
+    const trimmedNew = newName.trim();
+
+    if (user?.id) {
+      await db
+        .update(transactionsWork)
+        .set({ paymentMethod: trimmedNew })
+        .where(eq(transactionsWork.paymentMethod, trimmedOld));
+    } else {
+      await db
+        .update(transactionsWork)
+        .set({ paymentMethod: trimmedNew })
+        .where(eq(transactionsWork.paymentMethod, trimmedOld));
+    }
+
+    revalidatePath('/dashboard');
+    revalidatePath('/cards');
+    return { success: true, error: null };
+  } catch (error: unknown) {
+    console.error('Failed to update payment method name:', error);
+    const message = error instanceof Error ? error.message : 'カード名の更新に失敗しました';
     return { success: false, error: message };
   }
 }
