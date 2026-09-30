@@ -37,18 +37,18 @@ export default function Dashboard() {
   const [selectedMonth, setSelectedMonth] = useState<number>(today.getMonth() + 1);
 
   // Month start/end configuration state
-  const [settingMode, setSettingMode] = useState<'startDay' | 'nearestWeekday15' | 'custom'>(() => {
+  const [settingMode, setSettingMode] = useState<'startDay' | 'precedingWeekday15' | 'custom'>(() => {
     if (typeof window !== 'undefined') {
       try {
         const savedMode = localStorage.getItem('kakeibo_settingMode');
-        if (savedMode === 'startDay' || savedMode === 'nearestWeekday15' || savedMode === 'custom') {
-          return savedMode;
+        if (savedMode === 'startDay' || savedMode === 'precedingWeekday15' || savedMode === 'nearestWeekday15' || savedMode === 'custom') {
+          return 'precedingWeekday15';
         }
       } catch {
         // Ignore
       }
     }
-    return 'nearestWeekday15';
+    return 'precedingWeekday15';
   });
 
   const [monthStartDay, setMonthStartDay] = useState<number>(() => {
@@ -92,7 +92,7 @@ export default function Dashboard() {
     }
   };
 
-  const handleSettingModeChange = (mode: 'startDay' | 'nearestWeekday15' | 'custom') => {
+  const handleSettingModeChange = (mode: 'startDay' | 'precedingWeekday15' | 'custom') => {
     setSettingMode(mode);
     try {
       localStorage.setItem('kakeibo_settingMode', mode);
@@ -106,7 +106,7 @@ export default function Dashboard() {
     if (settingMode === 'custom' && customStartDate && customEndDate) {
       return { startDate: customStartDate, endDate: customEndDate };
     }
-    if (settingMode === 'nearestWeekday15') {
+    if (settingMode === 'precedingWeekday15') {
       return getMonthlyDateRange(selectedYear, selectedMonth, 15, true);
     }
     return getMonthlyDateRange(selectedYear, selectedMonth, monthStartDay, false);
@@ -293,29 +293,29 @@ export default function Dashboard() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-              {/* Option 1: 15th Nearest Weekday */}
+              {/* Option 1: 15th Preceding Weekday */}
               <div
                 className={`p-4 rounded-xl border cursor-pointer transition ${
-                  settingMode === 'nearestWeekday15'
+                  settingMode === 'precedingWeekday15'
                     ? 'bg-white dark:bg-gray-750 border-blue-500 shadow-sm'
                     : 'bg-white/50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700'
                 }`}
-                onClick={() => handleSettingModeChange('nearestWeekday15')}
+                onClick={() => handleSettingModeChange('precedingWeekday15')}
               >
                 <div className="flex items-center gap-2 mb-2">
                   <input
                     type="radio"
                     name="settingMode"
-                    checked={settingMode === 'nearestWeekday15'}
-                    onChange={() => handleSettingModeChange('nearestWeekday15')}
+                    checked={settingMode === 'precedingWeekday15'}
+                    onChange={() => handleSettingModeChange('precedingWeekday15')}
                     className="text-blue-600 focus:ring-blue-500"
                   />
                   <label className="text-sm font-bold text-gray-800 dark:text-gray-200 cursor-pointer">
-                    15日始まり (土日祝は直近平日)
+                    15日始まり (土日祝は直前の平日)
                   </label>
                 </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 ml-6">
-                  毎月15日を開始日とします。15日が土曜日・日曜日・祝日の場合は、直近の平日に自動補正されます。
+                  毎月15日を開始日とします。15日が土曜日・日曜日・祝日の場合は、直前の平日に自動補正されます。
                 </p>
               </div>
 
