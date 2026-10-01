@@ -42,3 +42,13 @@ export const transactionsWork = pgTable('transactions_work', {
   tag: text('tag'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const cardSettings = pgTable('card_settings', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
+  cardName: text('card_name').notNull().unique(),
+  closingDay: integer('closing_day').notNull().default(15),
+  paymentMonthOffset: integer('payment_month_offset').notNull().default(1),
+  paymentDay: integer('payment_day').notNull().default(10),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});

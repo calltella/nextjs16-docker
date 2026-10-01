@@ -2,7 +2,14 @@
 
 import { useState, useEffect, useTransition, useMemo, useSyncExternalStore } from 'react';
 import Navbar from '@/app/components/Navbar';
-import { getTransactions, updateTransaction, deleteTransaction, updatePaymentMethodName } from '@/app/dashboard/actions';
+import {
+  getTransactions,
+  updateTransaction,
+  deleteTransaction,
+  updatePaymentMethodName,
+  getCardSettingsFromDb,
+  upsertCardSettingInDb,
+} from '@/app/dashboard/actions';
 import Link from 'next/link';
 import {
   CardSetting,
@@ -63,16 +70,34 @@ function getServerCardSettingsSnapshot(): Record<string, Omit<CardSetting, 'card
 }
 
 export default function CardsPage() {
-  const cardSettingsMap = useSyncExternalStore(
+  const cardSettingsLocalStorageMap = useSyncExternalStore(
     subscribeCardSettings,
     getCardSettingsSnapshot,
     getServerCardSettingsSnapshot
   );
 
-  const saveCardSetting = (cardName: string, setting: Omit<CardSetting, 'cardName'>) => {
-    const updated = { ...cardSettingsMap, [cardName]: setting };
-    localStorage.setItem(CARD_SETTINGS_STORAGE_KEY, JSON.stringify(updated));
+  const [dbCardSettings, setDbCardSettings] = useState<Record<string, Omit<CardSetting, 'cardName'>>>({});
+  const [dbErrorWarning, setDbErrorWarning] = useState<string | null>(null);
+
+  const cardSettingsMap = useMemo(() => {
+    return { ...cardSettingsLocalStorageMap, ...dbCardSettings };
+  }, [cardSettingsLocalStorageMap, dbCardSettings]);
+
+  const saveCardSetting = async (cardName: string, setting: Omit<CardSetting, 'cardName'>) => {
+    // 1. Save to LocalStorage as instant local cache
+    const updatedLocal = { ...cardSettingsMap, [cardName]: setting };
+    localStorage.setItem(CARD_SETTINGS_STORAGE_KEY, JSON.stringify(updatedLocal));
     window.dispatchEvent(new Event('kakeibo_card_settings_change'));
+
+    // 2. Save to Database via Server Action
+    setDbCardSettings((prev) => ({ ...prev, [cardName]: setting }));
+    const res = await upsertCardSettingInDb(cardName, setting);
+    if (!res.success) {
+      console.warn('DB upsert card setting warning:', res.error);
+      setDbErrorWarning('※ DBテーブル未作成等の理由によりローカルストレージへ保存しました（SQLの実行でDB保存可能になります）。');
+    } else {
+      setDbErrorWarning(null);
+    }
   };
 
   const [items, setItems] = useState<TransactionWorkItem[]>([]);
@@ -103,16 +128,30 @@ export default function CardsPage() {
 
   useEffect(() => {
     let ignore = false;
-    getTransactions().then((res) => {
+
+    Promise.all([getTransactions(), getCardSettingsFromDb()]).then(([txRes, settingsRes]) => {
       if (!ignore) {
-        if (res.error) {
-          setErrorMsg(res.error);
+        if (txRes.error) {
+          setErrorMsg(txRes.error);
         } else {
-          setItems(res.data as TransactionWorkItem[]);
+          setItems(txRes.data as TransactionWorkItem[]);
+        }
+
+        if (settingsRes.data && settingsRes.data.length > 0) {
+          const map: Record<string, Omit<CardSetting, 'cardName'>> = {};
+          settingsRes.data.forEach((row) => {
+            map[row.cardName] = {
+              closingDay: row.closingDay,
+              paymentMonthOffset: row.paymentMonthOffset,
+              paymentDay: row.paymentDay,
+            };
+          });
+          setDbCardSettings(map);
         }
         setLoading(false);
       }
     });
+
     return () => {
       ignore = true;
     };
@@ -300,6 +339,13 @@ export default function CardsPage() {
           <div className="p-4 bg-green-100 dark:bg-green-900/40 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-300 rounded-xl text-sm flex justify-between items-center">
             <span>✅ {successMsg}</span>
             <button onClick={() => setSuccessMsg(null)} className="font-bold">✕</button>
+          </div>
+        )}
+
+        {dbErrorWarning && (
+          <div className="p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 rounded-xl text-xs flex justify-between items-center">
+            <span>{dbErrorWarning}</span>
+            <button onClick={() => setDbErrorWarning(null)} className="font-bold ml-2">✕</button>
           </div>
         )}
 

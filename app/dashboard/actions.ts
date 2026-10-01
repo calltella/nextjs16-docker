@@ -1,7 +1,7 @@
 'use server';
 
 import { db } from '@/src/db';
-import { transactionsWork } from '@/src/db/schema';
+import { transactionsWork, cardSettings } from '@/src/db/schema';
 import { eq, desc } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { parseHouseholdCsv } from '@/lib/csv';
@@ -75,6 +75,61 @@ export async function addTransaction(formData: FormData) {
   } catch (error: unknown) {
     console.error('Failed to add transaction:', error);
     const message = error instanceof Error ? error.message : '取引の追加に失敗しました';
+    return { success: false, error: message };
+  }
+}
+
+export async function getCardSettingsFromDb() {
+  try {
+    const list = await db.select().from(cardSettings);
+    return { data: list, error: null };
+  } catch (error: unknown) {
+    console.error('Failed to fetch card settings:', error);
+    const message = error instanceof Error ? error.message : 'Failed to fetch card settings';
+    return { data: [], error: message };
+  }
+}
+
+export async function upsertCardSettingInDb(
+  cardName: string,
+  setting: { closingDay: number; paymentMonthOffset: number; paymentDay: number }
+) {
+  try {
+    if (!cardName || !cardName.trim()) {
+      return { success: false, error: 'カード名が無効です' };
+    }
+    const trimmedCardName = cardName.trim();
+
+    // Check existing
+    const existing = await db
+      .select()
+      .from(cardSettings)
+      .where(eq(cardSettings.cardName, trimmedCardName));
+
+    if (existing.length > 0) {
+      await db
+        .update(cardSettings)
+        .set({
+          closingDay: setting.closingDay,
+          paymentMonthOffset: setting.paymentMonthOffset,
+          paymentDay: setting.paymentDay,
+          updatedAt: new Date(),
+        })
+        .where(eq(cardSettings.cardName, trimmedCardName));
+    } else {
+      await db.insert(cardSettings).values({
+        cardName: trimmedCardName,
+        closingDay: setting.closingDay,
+        paymentMonthOffset: setting.paymentMonthOffset,
+        paymentDay: setting.paymentDay,
+      });
+    }
+
+    revalidatePath('/cards');
+    return { success: true, error: null };
+  } catch (error: unknown) {
+    console.error('Failed to upsert card setting:', error);
+    const message = error instanceof Error ? error.message : 'カード設定の保存に失敗しました';
     return { success: false, error: message };
   }
 }
