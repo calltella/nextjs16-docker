@@ -10,20 +10,44 @@ export const users = pgTable('users', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const transactionTypes = pgTable('transaction_types', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
+  name: text('name').notNull().unique(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const paymentMethods = pgTable('payment_methods', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
+  name: text('name').notNull().unique(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const parentCategories = pgTable('parent_categories', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
+  name: text('name').notNull().unique(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const childCategories = pgTable('child_categories', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
+  parentCategoryId: bigint('parent_category_id', { mode: 'number' }).references(() => parentCategories.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const transactions = pgTable('transactions', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  title: text('title').notNull(),
-  amount: integer('amount').notNull(),
-  type: text('type', { enum: ['income', 'expense'] }).notNull().default('expense'),
-  category: text('category').notNull(),
-  date: text('date').notNull(),
-  paymentMethod: text('payment_method'),
-  parentCategory: text('parent_category'),
-  subCategory: text('sub_category'),
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
+  userId: uuid('user_id').notNull().default(sql`auth.uid()`),
+  date: date('date').notNull(),
+  typeId: bigint('type_id', { mode: 'number' }).references(() => transactionTypes.id),
+  paymentMethodId: bigint('payment_method_id', { mode: 'number' }).references(() => paymentMethods.id),
+  parentCategoryId: bigint('parent_category_id', { mode: 'number' }).references(() => parentCategories.id),
+  childCategoryId: bigint('child_category_id', { mode: 'number' }).references(() => childCategories.id),
+  amount: integer('amount'),
   location: text('location'),
+  memo: text('memo'),
   note: text('note'),
-  remarks: text('remarks'),
-  tags: text('tags'),
+  tag: text('tag'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
