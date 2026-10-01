@@ -68,11 +68,69 @@ async function getOrCreateChildCategoryId(name?: string | null, parentCategoryId
   return inserted[0].id;
 }
 
-export async function migrateWorkToTransactions() {
+export async function getWorkTransactionsSummary() {
   try {
-    const workRows = await db.select().from(transactionsWork);
+    const userId = await getSafeUserId();
+    const workRows = userId
+      ? await db.select().from(transactionsWork).where(eq(transactionsWork.userId, userId))
+      : await db.select().from(transactionsWork);
+
     if (workRows.length === 0) {
-      return { success: true, count: 0, message: 'transactions_work にデータが存在しませんでした' };
+      return { data: null, error: null };
+    }
+
+    let totalIncome = 0;
+    let totalExpense = 0;
+    let minDate = workRows[0].date;
+    let maxDate = workRows[0].date;
+
+    workRows.forEach((row) => {
+      const amount = row.amount || 0;
+      if (row.type === '収入' || row.type === 'income') {
+        totalIncome += amount;
+      } else {
+        totalExpense += amount;
+      }
+      if (row.date < minDate) minDate = row.date;
+      if (row.date > maxDate) maxDate = row.date;
+    });
+
+    return {
+      data: {
+        count: workRows.length,
+        totalIncome,
+        totalExpense,
+        balance: totalIncome - totalExpense,
+        minDate,
+        maxDate,
+      },
+      error: null,
+    };
+  } catch (error: unknown) {
+    console.error('Failed to summarize transactions_work:', error);
+    const message = error instanceof Error ? error.message : 'データ分析に失敗しました';
+    return { data: null, error: message };
+  }
+}
+
+export async function saveWorkToNormalizedTransactions() {
+  try {
+    const userId = await getSafeUserId();
+
+    // 1. Delete all existing records in normalized transactions table
+    if (userId) {
+      await db.delete(transactions).where(eq(transactions.userId, userId));
+    } else {
+      await db.delete(transactions);
+    }
+
+    // 2. Fetch all records from transactions_work
+    const workRows = userId
+      ? await db.select().from(transactionsWork).where(eq(transactionsWork.userId, userId))
+      : await db.select().from(transactionsWork);
+
+    if (workRows.length === 0) {
+      return { success: false, count: 0, error: 'transactions_work に分析・保存対象のデータが存在しません' };
     }
 
     let insertedCount = 0;
@@ -82,27 +140,33 @@ export async function migrateWorkToTransactions() {
       const parentCategoryId = await getOrCreateParentCategoryId(row.parentCategory);
       const childCategoryId = await getOrCreateChildCategoryId(row.childCategory, parentCategoryId);
 
-      await db.insert(transactions).values({
-        userId: row.userId,
+      const txItem: typeof transactions.$inferInsert = {
         date: row.date,
         typeId,
         paymentMethodId,
         parentCategoryId,
         childCategoryId,
-        amount: row.amount,
+        amount: row.amount ?? null,
         location: row.location,
         memo: row.memo,
         note: row.note,
         tag: row.tag,
-      });
+      };
+
+      if (userId) {
+        txItem.userId = userId;
+      }
+
+      await db.insert(transactions).values(txItem);
       insertedCount++;
     }
 
     revalidatePath('/dashboard');
+    revalidatePath('/import');
     return { success: true, count: insertedCount, error: null };
   } catch (error: unknown) {
-    console.error('Failed to migrate transactions_work to transactions:', error);
-    const message = error instanceof Error ? error.message : 'データのコピーに失敗しました';
+    console.error('Failed to save transactions_work into transactions:', error);
+    const message = error instanceof Error ? error.message : 'transactions テーブルへの保存に失敗しました';
     return { success: false, count: 0, error: message };
   }
 }
@@ -288,35 +352,15 @@ export async function importCsv(formData: FormData) {
       return { success: false, error: '有効なデータが見つかりませんでした' };
     }
 
-    // Clear existing records in both transactions and transactionsWork
+    // Clear existing records in transactionsWork
     if (userId) {
-      await db.delete(transactions).where(eq(transactions.userId, userId));
       await db.delete(transactionsWork).where(eq(transactionsWork.userId, userId));
     } else {
-      await db.delete(transactions);
       await db.delete(transactionsWork);
     }
 
     if (rows.length > 0) {
       for (const row of rows) {
-        const typeId = await getOrCreateTypeId(row.type);
-        const paymentMethodId = await getOrCreatePaymentMethodId(row.paymentMethod);
-        const parentCategoryId = await getOrCreateParentCategoryId(row.parentCategory);
-        const childCategoryId = await getOrCreateChildCategoryId(row.childCategory, parentCategoryId);
-
-        const txItem: typeof transactions.$inferInsert = {
-          date: row.date,
-          typeId,
-          paymentMethodId,
-          parentCategoryId,
-          childCategoryId,
-          amount: row.amount ?? null,
-          location: row.location,
-          memo: row.memo,
-          note: row.note,
-          tag: row.tag,
-        };
-
         const workItem: typeof transactionsWork.$inferInsert = {
           date: row.date,
           type: row.type,
@@ -331,11 +375,9 @@ export async function importCsv(formData: FormData) {
         };
 
         if (userId) {
-          txItem.userId = userId;
           workItem.userId = userId;
         }
 
-        await db.insert(transactions).values(txItem);
         await db.insert(transactionsWork).values(workItem);
       }
     }
