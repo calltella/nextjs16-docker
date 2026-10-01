@@ -12,7 +12,7 @@ function assertEqual<T>(actual: T, expected: T, message: string) {
 console.log('--- Running Card Settings Tests ---');
 
 // Case 1: 15th closing, next month (offset 1), 10th payment
-const setting15 = { closingDay: 15, paymentMonthOffset: 1, paymentDay: 10 };
+const setting15 = { isCreditCard: true, closingDay: 15, paymentMonthOffset: 1, paymentDay: 10 };
 
 // Transaction before/on closing day
 const info1 = getPaymentInfoForTransaction('2026-03-10', setting15);
@@ -33,7 +33,7 @@ assertEqual(cycle1.billingCycleEnd, '2026-03-15', '2026-04 payment cycle end is 
 assertEqual(cycle1.paymentDate, '2026-04-10', '2026-04 payment date is 2026-04-10');
 
 // Case 2: Month-end closing (closingDay = 0), next month 27th payment
-const settingEnd = { closingDay: 0, paymentMonthOffset: 1, paymentDay: 27 };
+const settingEnd = { isCreditCard: true, closingDay: 0, paymentMonthOffset: 1, paymentDay: 27 };
 const info3 = getPaymentInfoForTransaction('2026-02-20', settingEnd);
 assertEqual(info3.closingDate, '2026-02-28', 'Feb transaction with month-end closing date is 2026-02-28');
 assertEqual(info3.paymentMonth, '2026-03', 'Feb transaction payment month is 2026-03');

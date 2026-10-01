@@ -1,11 +1,13 @@
 export interface CardSetting {
   cardName: string;
+  isCreditCard: boolean; // true = クレジットカード, false = 銀行口座・現金・電子マネー等
   closingDay: number; // 0 = 月末, 1~31 = 日付
   paymentMonthOffset: number; // 0 = 当月, 1 = 翌月, 2 = 翌々月
   paymentDay: number; // 0 = 月末, 1~31 = 日付
 }
 
 export const DEFAULT_CARD_SETTING: Omit<CardSetting, 'cardName'> = {
+  isCreditCard: true,
   closingDay: 15,
   paymentMonthOffset: 1, // 翌月
   paymentDay: 10,

@@ -141,6 +141,7 @@ export default function CardsPage() {
           const map: Record<string, Omit<CardSetting, 'cardName'>> = {};
           settingsRes.data.forEach((row) => {
             map[row.cardName] = {
+              isCreditCard: true,
               closingDay: row.closingDay,
               paymentMonthOffset: row.paymentMonthOffset,
               paymentDay: row.paymentDay,
@@ -199,15 +200,27 @@ export default function CardsPage() {
 
   // Card transactions falling in the current billing cycle for selected payment month
   const monthlyBilledTransactions = useMemo(() => {
-    if (!selectedCard || !currentBillingCycle.billingCycleStart || !currentBillingCycle.billingCycleEnd) {
+    if (!selectedCard) return [];
+    if (!(currentCardSetting.isCreditCard ?? true)) {
+      return items
+        .filter((item) => {
+          const pm = item.paymentMethod?.trim() || '未設定・その他';
+          if (pm !== selectedCard) return false;
+          return item.date && item.date.startsWith(selectedPaymentMonth);
+        })
+        .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    }
+    if (!currentBillingCycle.billingCycleStart || !currentBillingCycle.billingCycleEnd) {
       return [];
     }
-    return items.filter((item) => {
-      const pm = item.paymentMethod?.trim() || '未設定・その他';
-      if (pm !== selectedCard) return false;
-      const { paymentMonth } = getPaymentInfoForTransaction(item.date, currentCardSetting);
-      return paymentMonth === selectedPaymentMonth;
-    }).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    return items
+      .filter((item) => {
+        const pm = item.paymentMethod?.trim() || '未設定・その他';
+        if (pm !== selectedCard) return false;
+        const { paymentMonth } = getPaymentInfoForTransaction(item.date, currentCardSetting);
+        return paymentMonth === selectedPaymentMonth;
+      })
+      .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   }, [items, selectedCard, currentCardSetting, selectedPaymentMonth, currentBillingCycle]);
 
   // Total billed amount for selected month
@@ -366,9 +379,13 @@ export default function CardsPage() {
               {cardsSummary.map(([cardName, info]) => {
                 const isSelected = selectedCard === cardName;
                 const setting = cardSettingsMap[cardName] || DEFAULT_CARD_SETTING;
+                const isCc = setting.isCreditCard ?? true;
+
                 const closingText = setting.closingDay === 0 ? '月末' : `${setting.closingDay}日`;
                 const payOffsetLabel = setting.paymentMonthOffset === 0 ? '当月' : setting.paymentMonthOffset === 1 ? '翌月' : '翌々月';
                 const payDayText = setting.paymentDay === 0 ? '月末' : `${setting.paymentDay}日`;
+
+                const icon = isCc ? '💳' : cardName.includes('銀行') ? '🏦' : '💵';
 
                 return (
                   <div
@@ -383,7 +400,7 @@ export default function CardsPage() {
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <span className="font-bold text-base truncate flex items-center gap-1.5">
-                          <span>💳</span>
+                          <span>{icon}</span>
                           <span>{cardName}</span>
                         </span>
                         <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 font-semibold text-gray-600 dark:text-gray-300">
@@ -392,8 +409,16 @@ export default function CardsPage() {
                       </div>
 
                       <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
-                        <div>締め日: <span className="font-semibold text-gray-700 dark:text-gray-300">{closingText}</span></div>
-                        <div>引き落とし: <span className="font-semibold text-gray-700 dark:text-gray-300">{payOffsetLabel}{payDayText}</span></div>
+                        {isCc ? (
+                          <>
+                            <div>締め日: <span className="font-semibold text-gray-700 dark:text-gray-300">{closingText}</span></div>
+                            <div>引き落とし: <span className="font-semibold text-gray-700 dark:text-gray-300">{payOffsetLabel}{payDayText}</span></div>
+                          </>
+                        ) : (
+                          <div className="text-blue-600 dark:text-blue-400 font-semibold">
+                            即時決済 (銀行口座・現金等)
+                          </div>
+                        )}
                       </div>
 
                       <div className="mt-3 space-y-1">
@@ -477,63 +502,101 @@ export default function CardsPage() {
             <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm space-y-4">
               <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-700 pb-3">
                 <h2 className="font-bold text-base flex items-center gap-2">
-                  <span>⚙️</span> 「{selectedCard}」の締め日・引き落とし日設定
+                  <span>⚙️</span> 「{selectedCard}」の支払い種別・締め日設定
                 </h2>
-                <span className="text-xs text-gray-400">※カードごとに個別保存されます</span>
+                <span className="text-xs text-gray-400">※支払い方法ごとに個別設定</span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+              <div className="space-y-4 text-xs">
+                {/* Type Selection: Credit Card vs Bank Account / Cash */}
                 <div>
-                  <label className="block text-gray-500 dark:text-gray-400 mb-1 font-medium">締め日</label>
-                  <select
-                    value={currentCardSetting.closingDay}
-                    onChange={(e) => saveCardSetting(selectedCard, { ...currentCardSetting, closingDay: Number(e.target.value) })}
-                    className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-semibold"
-                  >
-                    <option value={5}>毎月 5日</option>
-                    <option value={10}>毎月 10日</option>
-                    <option value={15}>毎月 15日 (標準)</option>
-                    <option value={20}>毎月 20日</option>
-                    <option value={25}>毎月 25日</option>
-                    <option value={0}>毎月 末日</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-gray-500 dark:text-gray-400 mb-1 font-medium">引き落とし月</label>
-                  <select
-                    value={currentCardSetting.paymentMonthOffset}
-                    onChange={(e) => saveCardSetting(selectedCard, { ...currentCardSetting, paymentMonthOffset: Number(e.target.value) })}
-                    className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-semibold"
-                  >
-                    <option value={0}>当月</option>
-                    <option value={1}>翌月 (標準)</option>
-                    <option value={2}>翌々月</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-gray-500 dark:text-gray-400 mb-1 font-medium">
-                    引き落とし日 <span className="text-[10px] text-gray-400">(1〜31日 または 0=末日)</span>
+                  <label className="block text-gray-500 dark:text-gray-400 mb-1.5 font-medium">
+                    支払い方法の種別
                   </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min={0}
-                      max={31}
-                      value={currentCardSetting.paymentDay}
-                      onChange={(e) => {
-                        const val = Math.max(0, Math.min(31, Number(e.target.value) || 0));
-                        saveCardSetting(selectedCard, { ...currentCardSetting, paymentDay: val });
-                      }}
-                      className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-semibold focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                      placeholder="例: 10 (0=末日)"
-                    />
-                    <span className="text-xs font-bold text-gray-600 dark:text-gray-300 whitespace-nowrap">
-                      {currentCardSetting.paymentDay === 0 ? '末日' : '日'}
-                    </span>
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name={`isCreditCard_${selectedCard}`}
+                        checked={currentCardSetting.isCreditCard ?? true}
+                        onChange={() => saveCardSetting(selectedCard, { ...currentCardSetting, isCreditCard: true })}
+                        className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="font-bold text-sm">💳 クレジットカード (後払い・締め日あり)</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name={`isCreditCard_${selectedCard}`}
+                        checked={!(currentCardSetting.isCreditCard ?? true)}
+                        onChange={() => saveCardSetting(selectedCard, { ...currentCardSetting, isCreditCard: false })}
+                        className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="font-bold text-sm">🏦 銀行口座・現金・即時決済</span>
+                    </label>
                   </div>
                 </div>
+
+                {/* Conditional Controls for Credit Card */}
+                {currentCardSetting.isCreditCard ?? true ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-gray-100 dark:border-gray-700">
+                    <div>
+                      <label className="block text-gray-500 dark:text-gray-400 mb-1 font-medium">締め日</label>
+                      <select
+                        value={currentCardSetting.closingDay}
+                        onChange={(e) => saveCardSetting(selectedCard, { ...currentCardSetting, closingDay: Number(e.target.value) })}
+                        className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-semibold"
+                      >
+                        <option value={5}>毎月 5日</option>
+                        <option value={10}>毎月 10日</option>
+                        <option value={15}>毎月 15日 (標準)</option>
+                        <option value={20}>毎月 20日</option>
+                        <option value={25}>毎月 25日</option>
+                        <option value={0}>毎月 末日</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-gray-500 dark:text-gray-400 mb-1 font-medium">引き落とし月</label>
+                      <select
+                        value={currentCardSetting.paymentMonthOffset}
+                        onChange={(e) => saveCardSetting(selectedCard, { ...currentCardSetting, paymentMonthOffset: Number(e.target.value) })}
+                        className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-semibold"
+                      >
+                        <option value={0}>当月</option>
+                        <option value={1}>翌月 (標準)</option>
+                        <option value={2}>翌々月</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-gray-500 dark:text-gray-400 mb-1 font-medium">
+                        引き落とし日 <span className="text-[10px] text-gray-400">(1〜31日 または 0=末日)</span>
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          max={31}
+                          value={currentCardSetting.paymentDay}
+                          onChange={(e) => {
+                            const val = Math.max(0, Math.min(31, Number(e.target.value) || 0));
+                            saveCardSetting(selectedCard, { ...currentCardSetting, paymentDay: val });
+                          }}
+                          className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-semibold focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                          placeholder="例: 10 (0=末日)"
+                        />
+                        <span className="text-xs font-bold text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                          {currentCardSetting.paymentDay === 0 ? '末日' : '日'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-blue-50 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded-xl text-xs">
+                    💡 銀行口座や現金などは即時引き落とし・即時決済のため、後払いの締め日・引き落とし日計算は適用されません。明細は利用日（出金日）基準で直接集計されます。
+                  </div>
+                )}
               </div>
             </div>
 
