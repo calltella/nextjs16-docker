@@ -220,7 +220,19 @@ export default function CardsPage() {
       }
     });
 
-    return Object.entries(map).sort((a, b) => b[1].count - a[1].count);
+    return Object.entries(map).sort(([, a], [, b]) => {
+      // 1. Instant settlement methods (isCc === false) come first
+      if (!a.isCc && b.isCc) return -1;
+      if (a.isCc && !b.isCc) return 1;
+
+      // 2. Ordered descending by monthly billed amount (monthlyExpense)
+      if (b.monthlyExpense !== a.monthlyExpense) {
+        return b.monthlyExpense - a.monthlyExpense;
+      }
+
+      // 3. Fallback: total count descending
+      return b.count - a.count;
+    });
   }, [items, cardSettingsMap, selectedPaymentMonth]);
 
   // Global total withdrawal for selected payment month across all payment methods
