@@ -158,31 +158,75 @@ export default function CardsPage() {
     };
   }, []);
 
-  // Summary per payment method / credit card
+  // Summary per payment method / credit card calculated for selected payment month
   const cardsSummary = useMemo(() => {
     const map: Record<
       string,
-      { count: number; totalExpense: number; totalIncome: number; latestDate: string }
+      {
+        count: number;
+        totalExpense: number;
+        monthlyExpense: number;
+        latestDate: string;
+        paymentDate: string;
+        billingCycleStart: string;
+        billingCycleEnd: string;
+        isCc: boolean;
+      }
     > = {};
 
     items.forEach((item) => {
       const pm = item.paymentMethod?.trim() || '未設定・その他';
       if (!map[pm]) {
-        map[pm] = { count: 0, totalExpense: 0, totalIncome: 0, latestDate: '' };
+        const setting = cardSettingsMap[pm] || DEFAULT_CARD_SETTING;
+        const cycle = getBillingCycleForPaymentMonth(selectedPaymentMonth, setting);
+        const isCc = setting.isCreditCard ?? true;
+
+        map[pm] = {
+          count: 0,
+          totalExpense: 0,
+          monthlyExpense: 0,
+          latestDate: '',
+          paymentDate: cycle.paymentDate,
+          billingCycleStart: cycle.billingCycleStart,
+          billingCycleEnd: cycle.billingCycleEnd,
+          isCc,
+        };
       }
+
       map[pm].count += 1;
-      if (item.type === '支出' || item.type === 'expense') {
+      const isExpense = item.type === '支出' || item.type === 'expense';
+      if (isExpense) {
         map[pm].totalExpense += item.amount || 0;
-      } else if (item.type === '収入' || item.type === 'income') {
-        map[pm].totalIncome += item.amount || 0;
       }
+
       if (!map[pm].latestDate || (item.date && item.date > map[pm].latestDate)) {
         map[pm].latestDate = item.date;
+      }
+
+      // Compute monthly billed amount for selected payment month
+      const setting = cardSettingsMap[pm] || DEFAULT_CARD_SETTING;
+      const isCc = setting.isCreditCard ?? true;
+      if (isExpense) {
+        if (!isCc) {
+          if (item.date && item.date.startsWith(selectedPaymentMonth)) {
+            map[pm].monthlyExpense += item.amount || 0;
+          }
+        } else {
+          const { paymentMonth } = getPaymentInfoForTransaction(item.date, setting);
+          if (paymentMonth === selectedPaymentMonth) {
+            map[pm].monthlyExpense += item.amount || 0;
+          }
+        }
       }
     });
 
     return Object.entries(map).sort((a, b) => b[1].count - a[1].count);
-  }, [items]);
+  }, [items, cardSettingsMap, selectedPaymentMonth]);
+
+  // Global total withdrawal for selected payment month across all payment methods
+  const globalMonthlyTotalExpense = useMemo(() => {
+    return cardsSummary.reduce((sum, [, info]) => sum + info.monthlyExpense, 0);
+  }, [cardsSummary]);
 
   const selectedCard = selectedCardState ?? (cardsSummary.length > 0 ? cardsSummary[0][0] : '');
   const setSelectedCard = (card: string) => setSelectedCardState(card);
@@ -324,21 +368,64 @@ export default function CardsPage() {
       <Navbar />
 
       <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-8 space-y-8">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-gray-200 dark:border-gray-800">
+        {/* Header with Global Payment Month Picker */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-gray-200 dark:border-gray-800">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">クレジットカード・支払い方法管理</h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              締め日・引き落とし日のカスタマイズと月毎の支払い・請求管理を行えます。
+              引き落とし日・締め日基準での月別支払い額と各カード請求明細を管理できます。
             </p>
           </div>
 
-          <Link
-            href="/dashboard"
-            className="text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 px-3.5 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 font-medium transition"
-          >
-            ← 月別集計画面へ
-          </Link>
+          <div className="flex items-center gap-3">
+            {/* Payment Month Picker */}
+            <div className="flex items-center gap-1.5 bg-white dark:bg-gray-800 p-1.5 rounded-2xl border border-gray-300 dark:border-gray-600 shadow-sm">
+              <button
+                type="button"
+                onClick={handlePrevMonth}
+                className="px-2.5 py-1 text-xs hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition font-bold"
+              >
+                ← 前月
+              </button>
+              <input
+                type="month"
+                value={selectedPaymentMonth}
+                onChange={(e) => e.target.value && setSelectedPaymentMonth(e.target.value)}
+                className="bg-transparent font-extrabold text-sm px-1 py-0.5 border-none focus:outline-none text-blue-600 dark:text-blue-400"
+              />
+              <button
+                type="button"
+                onClick={handleNextMonth}
+                className="px-2.5 py-1 text-xs hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition font-bold"
+              >
+                次月 →
+              </button>
+            </div>
+
+            <Link
+              href="/dashboard"
+              className="text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 px-3.5 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 font-medium transition"
+            >
+              ← 月別集計画面へ
+            </Link>
+          </div>
+        </div>
+
+        {/* Global Monthly Summary Card */}
+        <div className="p-5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 rounded-2xl text-white shadow-md flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <div className="text-xs text-blue-100 font-semibold tracking-wider uppercase">
+              {selectedPaymentMonth.replace('-', '年')}月 引き落とし・出金 総予定額
+            </div>
+            <div className="text-xs text-blue-200 mt-1">
+              ※各クレジットカードの締め日・引き落とし日設定に基づき自動算出
+            </div>
+          </div>
+          <div>
+            <div className="text-2xl sm:text-4xl font-extrabold tracking-tight">
+              ¥{globalMonthlyTotalExpense.toLocaleString()}
+            </div>
+          </div>
         </div>
 
         {errorMsg && (
@@ -412,7 +499,8 @@ export default function CardsPage() {
                         {isCc ? (
                           <>
                             <div>締め日: <span className="font-semibold text-gray-700 dark:text-gray-300">{closingText}</span></div>
-                            <div>引き落とし: <span className="font-semibold text-gray-700 dark:text-gray-300">{payOffsetLabel}{payDayText}</span></div>
+                            <div>引き落とし日: <span className="font-semibold text-blue-600 dark:text-blue-400">{info.paymentDate || `${payOffsetLabel}${payDayText}`}</span></div>
+                            <div className="text-[10px] text-gray-400">対象期間: {info.billingCycleStart} 〜 {info.billingCycleEnd}</div>
                           </>
                         ) : (
                           <div className="text-blue-600 dark:text-blue-400 font-semibold">
@@ -421,10 +509,15 @@ export default function CardsPage() {
                         )}
                       </div>
 
-                      <div className="mt-3 space-y-1">
-                        <div className="text-[11px] text-gray-400">累計支出:</div>
-                        <div className="text-lg font-extrabold text-red-600 dark:text-red-400">
-                          ¥{info.totalExpense.toLocaleString()}
+                      <div className="mt-3 pt-2 border-t border-gray-100 dark:border-gray-700/60 space-y-1">
+                        <div className="text-[11px] text-gray-500 dark:text-gray-400 font-semibold flex justify-between">
+                          <span>{selectedPaymentMonth.replace('-', '年')}月 引き落とし予定:</span>
+                        </div>
+                        <div className="text-xl font-extrabold text-red-600 dark:text-red-400">
+                          ¥{info.monthlyExpense.toLocaleString()}
+                        </div>
+                        <div className="text-[10px] text-gray-400">
+                          (累計支出: ¥{info.totalExpense.toLocaleString()})
                         </div>
                       </div>
                     </div>
