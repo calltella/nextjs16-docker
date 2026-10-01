@@ -257,14 +257,30 @@ export default function Dashboard() {
 
   const balance = totalIncome - totalExpense;
 
-  // Sort items in ascending order by date (oldest first)
-  const sortedDisplayItems = useMemo(() => {
-    return [...displayItems].sort((a, b) => {
+  // Sort items in ascending order by date (oldest first) and compute running cumulative balance starting from 0
+  const sortedDisplayItemsWithRunningBalance = useMemo(() => {
+    const sorted = [...displayItems].sort((a, b) => {
       if (a.date !== b.date) {
         return (a.date || '').localeCompare(b.date || '');
       }
       return a.id - b.id;
     });
+
+    const result: (TransactionWorkItem & { runningBalance: number })[] = [];
+    let currentRunning = 0;
+
+    for (let i = 0; i < sorted.length; i++) {
+      const item = sorted[i];
+      const isInc = item.type === '収入' || item.type === 'income';
+      const amt = item.amount || 0;
+      currentRunning = isInc ? currentRunning + amt : currentRunning - amt;
+      result.push({
+        ...item,
+        runningBalance: currentRunning,
+      });
+    }
+
+    return result;
   }, [displayItems]);
 
   return (
@@ -675,13 +691,13 @@ export default function Dashboard() {
 
           {loading ? (
             <div className="p-8 text-center text-gray-500 text-sm">読み込み中...</div>
-          ) : sortedDisplayItems.length === 0 ? (
+          ) : sortedDisplayItemsWithRunningBalance.length === 0 ? (
             <div className="p-8 text-center text-gray-500 text-sm">
               該当する明細がありません。上のフォームから登録するか、CSV取込画面からデータを取り込んでください。
             </div>
           ) : (
             <div className="divide-y divide-gray-100 dark:divide-gray-700">
-              {sortedDisplayItems.map((item) => {
+              {sortedDisplayItemsWithRunningBalance.map((item) => {
                 const isEditing = editingItem?.id === item.id;
                 const categoryLabel = item.childCategory || item.parentCategory || 'その他';
                 const displayTitle = item.memo || item.note || item.location || categoryLabel;
@@ -821,9 +837,10 @@ export default function Dashboard() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3 sm:gap-4">
+                    <div className="flex items-center gap-3 sm:gap-6">
+                      {/* Amount */}
                       <span
-                        className={`font-bold text-sm sm:text-lg ${
+                        className={`font-bold text-sm sm:text-lg text-right min-w-[80px] ${
                           isIncome
                             ? 'text-green-600 dark:text-green-400'
                             : 'text-red-600 dark:text-red-400'
@@ -833,22 +850,38 @@ export default function Dashboard() {
                         {(item.amount || 0).toLocaleString()}
                       </span>
 
-                      <button
-                        onClick={() => setEditingItem(item)}
-                        disabled={isPending}
-                        className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium p-1 rounded transition"
-                      >
-                        編集
-                      </button>
+                      {/* Cumulative Total Badge on the Right */}
+                      <div className="text-right border-l pl-3 dark:border-gray-700 min-w-[100px]">
+                        <div className="text-[10px] text-gray-400 font-medium">当月累計</div>
+                        <div
+                          className={`font-extrabold text-xs sm:text-sm ${
+                            item.runningBalance >= 0
+                              ? 'text-blue-600 dark:text-blue-400'
+                              : 'text-red-600 dark:text-red-400'
+                          }`}
+                        >
+                          ¥{item.runningBalance.toLocaleString()}
+                        </div>
+                      </div>
 
-                      <button
-                        onClick={() => handleDelete(item.id)}
-                        disabled={isPending}
-                        className="text-xs text-gray-400 hover:text-red-600 dark:hover:text-red-400 p-1 rounded transition"
-                        title="削除"
-                      >
-                        削除
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setEditingItem(item)}
+                          disabled={isPending}
+                          className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium p-1 rounded transition"
+                        >
+                          編集
+                        </button>
+
+                        <button
+                          onClick={() => handleDelete(item.id)}
+                          disabled={isPending}
+                          className="text-xs text-gray-400 hover:text-red-600 dark:hover:text-red-400 p-1 rounded transition"
+                          title="削除"
+                        >
+                          削除
+                        </button>
+                      </div>
                     </div>
                   </div>
                 );
