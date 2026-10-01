@@ -513,18 +513,26 @@ export default function CardsPage() {
                 </div>
 
                 <div>
-                  <label className="block text-gray-500 dark:text-gray-400 mb-1 font-medium">引き落とし日</label>
-                  <select
-                    value={currentCardSetting.paymentDay}
-                    onChange={(e) => saveCardSetting(selectedCard, { ...currentCardSetting, paymentDay: Number(e.target.value) })}
-                    className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-semibold"
-                  >
-                    <option value={4}>4日 (イオンカード等)</option>
-                    <option value={10}>10日 (楽天・セディナ等)</option>
-                    <option value={26}>26日 (三井住友等)</option>
-                    <option value={27}>27日 (JCB・楽天等)</option>
-                    <option value={0}>末日</option>
-                  </select>
+                  <label className="block text-gray-500 dark:text-gray-400 mb-1 font-medium">
+                    引き落とし日 <span className="text-[10px] text-gray-400">(1〜31日 または 0=末日)</span>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      max={31}
+                      value={currentCardSetting.paymentDay}
+                      onChange={(e) => {
+                        const val = Math.max(0, Math.min(31, Number(e.target.value) || 0));
+                        saveCardSetting(selectedCard, { ...currentCardSetting, paymentDay: val });
+                      }}
+                      className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-semibold focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      placeholder="例: 10 (0=末日)"
+                    />
+                    <span className="text-xs font-bold text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                      {currentCardSetting.paymentDay === 0 ? '末日' : '日'}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
