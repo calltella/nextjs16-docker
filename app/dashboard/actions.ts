@@ -99,7 +99,7 @@ export async function getTransactions() {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
-    // Query normalized transactions table
+    // Strictly query normalized transactions table
     const normalizedList = await db
       .select({
         id: transactions.id,
@@ -124,21 +124,11 @@ export async function getTransactions() {
       .where(user?.id ? eq(transactions.userId, user.id) : undefined)
       .orderBy(desc(transactions.date), desc(transactions.createdAt));
 
-    if (normalizedList.length > 0) {
-      // Map to standard transaction object shape
-      const mapped = normalizedList.map((item) => ({
-        ...item,
-        type: item.type || '支出',
-      }));
-      return { data: mapped, error: null };
-    }
-
-    // Fallback to transactionsWork table if normalized transactions is empty
-    const list = user?.id
-      ? await db.select().from(transactionsWork).where(eq(transactionsWork.userId, user.id)).orderBy(desc(transactionsWork.date), desc(transactionsWork.createdAt))
-      : await db.select().from(transactionsWork).orderBy(desc(transactionsWork.date), desc(transactionsWork.createdAt));
-
-    return { data: list, error: null };
+    const mapped = normalizedList.map((item) => ({
+      ...item,
+      type: item.type || '支出',
+    }));
+    return { data: mapped, error: null };
   } catch (error: unknown) {
     console.error('Failed to fetch transactions:', error);
     const message = error instanceof Error ? error.message : 'Failed to fetch transactions';
