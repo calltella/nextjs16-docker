@@ -92,13 +92,14 @@ export async function getCardSettingsFromDb() {
 
 export async function upsertCardSettingInDb(
   cardName: string,
-  setting: { closingDay: number; paymentMonthOffset: number; paymentDay: number }
+  setting: { isCreditCard?: boolean; closingDay: number; paymentMonthOffset: number; paymentDay: number }
 ) {
   try {
     if (!cardName || !cardName.trim()) {
       return { success: false, error: 'カード名が無効です' };
     }
     const trimmedCardName = cardName.trim();
+    const isCreditCard = setting.isCreditCard ?? true;
 
     // Check existing
     const existing = await db
@@ -110,6 +111,7 @@ export async function upsertCardSettingInDb(
       await db
         .update(cardSettings)
         .set({
+          isCreditCard,
           closingDay: setting.closingDay,
           paymentMonthOffset: setting.paymentMonthOffset,
           paymentDay: setting.paymentDay,
@@ -119,6 +121,7 @@ export async function upsertCardSettingInDb(
     } else {
       await db.insert(cardSettings).values({
         cardName: trimmedCardName,
+        isCreditCard,
         closingDay: setting.closingDay,
         paymentMonthOffset: setting.paymentMonthOffset,
         paymentDay: setting.paymentDay,

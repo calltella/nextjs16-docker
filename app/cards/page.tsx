@@ -141,7 +141,7 @@ export default function CardsPage() {
           const map: Record<string, Omit<CardSetting, 'cardName'>> = {};
           settingsRes.data.forEach((row) => {
             map[row.cardName] = {
-              isCreditCard: true,
+              isCreditCard: row.isCreditCard ?? true,
               closingDay: row.closingDay,
               paymentMonthOffset: row.paymentMonthOffset,
               paymentDay: row.paymentDay,

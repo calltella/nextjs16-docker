@@ -46,6 +46,7 @@ export const transactionsWork = pgTable('transactions_work', {
 export const cardSettings = pgTable('card_settings', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
   cardName: text('card_name').notNull().unique(),
+  isCreditCard: boolean('is_credit_card').notNull().default(true),
   closingDay: integer('closing_day').notNull().default(15),
   paymentMonthOffset: integer('payment_month_offset').notNull().default(1),
   paymentDay: integer('payment_day').notNull().default(10),
