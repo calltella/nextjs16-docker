@@ -277,16 +277,6 @@ export default function CardsPage() {
     }, 0);
   }, [monthlyBilledTransactions]);
 
-  // All transactions for selected card (unfiltered by month)
-  const cardTransactions = useMemo(() => {
-    if (!selectedCard) return [];
-    return items
-      .filter((i) => {
-        const pm = i.paymentMethod?.trim() || '未設定・その他';
-        return pm === selectedCard;
-      })
-      .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-  }, [items, selectedCard]);
 
   const handleRenameCardSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -763,88 +753,6 @@ export default function CardsPage() {
                   </div>
                 ) : (
                   monthlyBilledTransactions.map((item) => {
-                    const categoryLabel = item.childCategory || item.parentCategory || 'その他';
-                    const displayTitle = item.memo || item.note || item.location || categoryLabel;
-                    const isIncome = item.type === '収入' || item.type === 'income';
-
-                    return (
-                      <div
-                        key={item.id}
-                        className="p-4 sm:px-6 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-750 transition"
-                      >
-                        <div className="flex items-center gap-3 sm:gap-4">
-                          <span
-                            className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
-                              isIncome
-                                ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300'
-                                : 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300'
-                            }`}
-                          >
-                            {categoryLabel}
-                          </span>
-                          <div>
-                            <div className="font-semibold text-sm sm:text-base">{displayTitle}</div>
-                            <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                              利用日: {item.date}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-3 sm:gap-4">
-                          <span
-                            className={`font-bold text-sm sm:text-lg ${
-                              isIncome ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
-                            }`}
-                          >
-                            {isIncome ? '+' : '-'}¥{(item.amount || 0).toLocaleString()}
-                          </span>
-
-                          <button
-                            onClick={() => setEditingItem(item)}
-                            disabled={isPending}
-                            className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium p-1 rounded transition"
-                          >
-                            編集
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-
-            {/* 3. All Transactions Edit Table for selected card */}
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden space-y-4">
-              <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div>
-                  <h2 className="text-base font-bold flex items-center gap-2">
-                    <span>📋</span> 「{selectedCard}」の全登録明細・編集
-                  </h2>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                    全{cardTransactions.length}件の明細を一覧表示・編集・削除できます
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRenamingCard(selectedCard);
-                    setNewCardName(selectedCard === '未設定・その他' ? '' : selectedCard);
-                  }}
-                  className="text-xs px-3.5 py-2 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl font-semibold hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition"
-                >
-                  ✏️ このカード名を一括変更する
-                </button>
-              </div>
-
-              {cardTransactions.length === 0 ? (
-                <div className="p-8 text-center text-gray-500 text-sm">
-                  「{selectedCard}」の明細はありません。
-                </div>
-              ) : (
-                <div className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {cardTransactions.map((item) => {
                     const isEditing = editingItem?.id === item.id;
                     const categoryLabel = item.childCategory || item.parentCategory || 'その他';
                     const displayTitle = item.memo || item.note || item.location || categoryLabel;
@@ -970,7 +878,9 @@ export default function CardsPage() {
                           </span>
                           <div>
                             <div className="font-semibold text-sm sm:text-base">{displayTitle}</div>
-                            <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{item.date}</div>
+                            <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                              利用日: {item.date}
+                            </div>
                           </div>
                         </div>
 
@@ -1002,9 +912,9 @@ export default function CardsPage() {
                         </div>
                       </div>
                     );
-                  })}
-                </div>
-              )}
+                  })
+                )}
+              </div>
             </div>
           </div>
         )}
