@@ -77,3 +77,24 @@ export const cardSettings = pgTable('card_settings', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const bankAccounts = pgTable('bank_accounts', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
+  userId: uuid('user_id').notNull().default(sql`auth.uid()`),
+  accountName: text('account_name').notNull(),
+  bankName: text('bank_name'),
+  accountNumber: text('account_number'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const bankBalances = pgTable('bank_balances', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
+  userId: uuid('user_id').notNull().default(sql`auth.uid()`),
+  bankAccountId: bigint('bank_account_id', { mode: 'number' }).references(() => bankAccounts.id, { onDelete: 'cascade' }),
+  accountName: text('account_name').notNull(),
+  recordDate: date('record_date').notNull(),
+  balance: integer('balance').notNull(),
+  memo: text('memo'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});

@@ -9,11 +9,24 @@ import {
   paymentMethods,
   parentCategories,
   childCategories,
+  bankAccounts,
+  bankBalances,
 } from '@/src/db/schema';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, and } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { parseHouseholdCsv } from '@/lib/csv';
 import { createClient } from '@/lib/supabase/server';
+
+// Helper to safely get user ID without throwing if Supabase env is unconfigured
+async function getSafeUserId(): Promise<string | null> {
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    return user?.id || null;
+  } catch {
+    return null;
+  }
+}
 
 // Helper functions for normalized lookup records
 async function getOrCreateTypeId(name?: string | null): Promise<number | null> {
@@ -96,8 +109,7 @@ export async function migrateWorkToTransactions() {
 
 export async function getTransactions() {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const userId = await getSafeUserId();
 
     // Strictly query normalized transactions table
     const normalizedList = await db
@@ -121,7 +133,7 @@ export async function getTransactions() {
       .leftJoin(paymentMethods, eq(transactions.paymentMethodId, paymentMethods.id))
       .leftJoin(parentCategories, eq(transactions.parentCategoryId, parentCategories.id))
       .leftJoin(childCategories, eq(transactions.childCategoryId, childCategories.id))
-      .where(user?.id ? eq(transactions.userId, user.id) : undefined)
+      .where(userId ? eq(transactions.userId, userId) : undefined)
       .orderBy(desc(transactions.date), desc(transactions.createdAt));
 
     const mapped = normalizedList.map((item) => ({
@@ -138,8 +150,7 @@ export async function getTransactions() {
 
 export async function addTransaction(formData: FormData) {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const userId = await getSafeUserId();
 
     const amountStr = formData.get('amount') as string;
     const type = (formData.get('type') as string) || '支出';
@@ -186,9 +197,9 @@ export async function addTransaction(formData: FormData) {
       tag,
     };
 
-    if (user?.id) {
-      insertValues.userId = user.id;
-      workValues.userId = user.id;
+    if (userId) {
+      insertValues.userId = userId;
+      workValues.userId = userId;
     }
 
     await db.insert(transactions).values(insertValues);
@@ -263,8 +274,7 @@ export async function upsertCardSettingInDb(
 
 export async function importCsv(formData: FormData) {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const userId = await getSafeUserId();
 
     const file = formData.get('file') as File | null;
     if (!file) {
@@ -279,9 +289,9 @@ export async function importCsv(formData: FormData) {
     }
 
     // Clear existing records in both transactions and transactionsWork
-    if (user?.id) {
-      await db.delete(transactions).where(eq(transactions.userId, user.id));
-      await db.delete(transactionsWork).where(eq(transactionsWork.userId, user.id));
+    if (userId) {
+      await db.delete(transactions).where(eq(transactions.userId, userId));
+      await db.delete(transactionsWork).where(eq(transactionsWork.userId, userId));
     } else {
       await db.delete(transactions);
       await db.delete(transactionsWork);
@@ -320,9 +330,9 @@ export async function importCsv(formData: FormData) {
           tag: row.tag,
         };
 
-        if (user?.id) {
-          txItem.userId = user.id;
-          workItem.userId = user.id;
+        if (userId) {
+          txItem.userId = userId;
+          workItem.userId = userId;
         }
 
         await db.insert(transactions).values(txItem);
@@ -441,6 +451,136 @@ export async function updatePaymentMethodName(oldName: string, newName: string) 
   } catch (error: unknown) {
     console.error('Failed to update payment method name:', error);
     const message = error instanceof Error ? error.message : 'カード名の更新に失敗しました';
+    return { success: false, error: message };
+  }
+}
+
+// ==========================================
+// Bank Accounts & Balances Server Actions
+// ==========================================
+
+export async function getBankAccounts() {
+  try {
+    const userId = await getSafeUserId();
+
+    const list = userId
+      ? await db.select().from(bankAccounts).where(eq(bankAccounts.userId, userId)).orderBy(desc(bankAccounts.createdAt))
+      : await db.select().from(bankAccounts).orderBy(desc(bankAccounts.createdAt));
+
+    return { data: list, error: null };
+  } catch (error: unknown) {
+    console.error('Failed to fetch bank accounts:', error);
+    const message = error instanceof Error ? error.message : '銀行口座一覧の取得に失敗しました';
+    return { data: [], error: message };
+  }
+}
+
+export async function addBankAccount(accountName: string, bankName?: string, accountNumber?: string) {
+  try {
+    if (!accountName || !accountName.trim()) {
+      return { success: false, error: '口座名を入力してください' };
+    }
+    const userId = await getSafeUserId();
+
+    const insertValues: typeof bankAccounts.$inferInsert = {
+      accountName: accountName.trim(),
+      bankName: bankName?.trim() || null,
+      accountNumber: accountNumber?.trim() || null,
+    };
+
+    if (userId) {
+      insertValues.userId = userId;
+    }
+
+    const inserted = await db.insert(bankAccounts).values(insertValues).returning();
+
+    revalidatePath('/accounts');
+    return { success: true, data: inserted[0], error: null };
+  } catch (error: unknown) {
+    console.error('Failed to add bank account:', error);
+    const message = error instanceof Error ? error.message : '銀行口座の追加に失敗しました';
+    return { success: false, data: null, error: message };
+  }
+}
+
+export async function deleteBankAccount(id: number) {
+  try {
+    await db.delete(bankAccounts).where(eq(bankAccounts.id, id));
+    revalidatePath('/accounts');
+    return { success: true, error: null };
+  } catch (error: unknown) {
+    console.error('Failed to delete bank account:', error);
+    const message = error instanceof Error ? error.message : '銀行口座の削除に失敗しました';
+    return { success: false, error: message };
+  }
+}
+
+export async function getBankBalances(accountName?: string) {
+  try {
+    const userId = await getSafeUserId();
+
+    const query = db.select().from(bankBalances);
+
+    if (accountName) {
+      const list = userId
+        ? await query.where(and(eq(bankBalances.userId, userId), eq(bankBalances.accountName, accountName))).orderBy(desc(bankBalances.recordDate), desc(bankBalances.createdAt))
+        : await query.where(eq(bankBalances.accountName, accountName)).orderBy(desc(bankBalances.recordDate), desc(bankBalances.createdAt));
+      return { data: list, error: null };
+    }
+
+    const list = userId
+      ? await query.where(eq(bankBalances.userId, userId)).orderBy(desc(bankBalances.recordDate), desc(bankBalances.createdAt))
+      : await query.orderBy(desc(bankBalances.recordDate), desc(bankBalances.createdAt));
+
+    return { data: list, error: null };
+  } catch (error: unknown) {
+    console.error('Failed to fetch bank balances:', error);
+    const message = error instanceof Error ? error.message : '口座残高履歴の取得に失敗しました';
+    return { data: [], error: message };
+  }
+}
+
+export async function addBankBalanceRecord(accountName: string, balance: number, recordDate: string, memo?: string) {
+  try {
+    if (!accountName || !accountName.trim()) {
+      return { success: false, error: '口座名が無効です' };
+    }
+    if (isNaN(balance)) {
+      return { success: false, error: '有効な残高金額を入力してください' };
+    }
+
+    const userId = await getSafeUserId();
+
+    const insertValues: typeof bankBalances.$inferInsert = {
+      accountName: accountName.trim(),
+      recordDate: recordDate || new Date().toISOString().split('T')[0],
+      balance,
+      memo: memo?.trim() || null,
+    };
+
+    if (userId) {
+      insertValues.userId = userId;
+    }
+
+    await db.insert(bankBalances).values(insertValues);
+
+    revalidatePath('/accounts');
+    return { success: true, error: null };
+  } catch (error: unknown) {
+    console.error('Failed to add bank balance record:', error);
+    const message = error instanceof Error ? error.message : '残高記録の追加に失敗しました';
+    return { success: false, error: message };
+  }
+}
+
+export async function deleteBankBalanceRecord(id: number) {
+  try {
+    await db.delete(bankBalances).where(eq(bankBalances.id, id));
+    revalidatePath('/accounts');
+    return { success: true, error: null };
+  } catch (error: unknown) {
+    console.error('Failed to delete bank balance record:', error);
+    const message = error instanceof Error ? error.message : '残高記録の削除に失敗しました';
     return { success: false, error: message };
   }
 }
