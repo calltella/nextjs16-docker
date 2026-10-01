@@ -55,6 +55,45 @@ async function getOrCreateChildCategoryId(name?: string | null, parentCategoryId
   return inserted[0].id;
 }
 
+export async function migrateWorkToTransactions() {
+  try {
+    const workRows = await db.select().from(transactionsWork);
+    if (workRows.length === 0) {
+      return { success: true, count: 0, message: 'transactions_work にデータが存在しませんでした' };
+    }
+
+    let insertedCount = 0;
+    for (const row of workRows) {
+      const typeId = await getOrCreateTypeId(row.type);
+      const paymentMethodId = await getOrCreatePaymentMethodId(row.paymentMethod);
+      const parentCategoryId = await getOrCreateParentCategoryId(row.parentCategory);
+      const childCategoryId = await getOrCreateChildCategoryId(row.childCategory, parentCategoryId);
+
+      await db.insert(transactions).values({
+        userId: row.userId,
+        date: row.date,
+        typeId,
+        paymentMethodId,
+        parentCategoryId,
+        childCategoryId,
+        amount: row.amount,
+        location: row.location,
+        memo: row.memo,
+        note: row.note,
+        tag: row.tag,
+      });
+      insertedCount++;
+    }
+
+    revalidatePath('/dashboard');
+    return { success: true, count: insertedCount, error: null };
+  } catch (error: unknown) {
+    console.error('Failed to migrate transactions_work to transactions:', error);
+    const message = error instanceof Error ? error.message : 'データのコピーに失敗しました';
+    return { success: false, count: 0, error: message };
+  }
+}
+
 export async function getTransactions() {
   try {
     const supabase = await createClient();
