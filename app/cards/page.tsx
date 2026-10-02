@@ -10,6 +10,7 @@ import {
   getCardSettingsFromDb,
   upsertCardSettingInDb,
   getBankAccounts,
+  getPaymentMethodsCategorized,
 } from '@/app/dashboard/actions';
 import { normalizeName } from '@/lib/string-utils';
 import Link from 'next/link';
@@ -132,7 +133,12 @@ export default function CardsPage() {
   useEffect(() => {
     let ignore = false;
 
-    Promise.all([getTransactions(), getCardSettingsFromDb(), getBankAccounts()]).then(([txRes, settingsRes, bankRes]) => {
+    Promise.all([
+      getTransactions(),
+      getCardSettingsFromDb(),
+      getBankAccounts(),
+      getPaymentMethodsCategorized(),
+    ]).then(([txRes, settingsRes, bankRes, pmRes]) => {
       if (!ignore) {
         if (txRes.error) {
           setErrorMsg(txRes.error);
@@ -140,10 +146,22 @@ export default function CardsPage() {
           setItems(txRes.data as TransactionWorkItem[]);
         }
 
+        const namesSet = new Set<string>();
         if (bankRes.data) {
-          const names = bankRes.data.map((b) => normalizeName(b.accountName)).filter(Boolean);
-          setBankAccountOptions(Array.from(new Set(names)));
+          bankRes.data.forEach((b) => {
+            const norm = normalizeName(b.accountName);
+            if (norm) namesSet.add(norm);
+          });
         }
+        if (pmRes.data) {
+          pmRes.data.forEach((pm) => {
+            if (pm.type === 'bank_account' || pm.name.includes('銀行')) {
+              const norm = normalizeName(pm.name);
+              if (norm) namesSet.add(norm);
+            }
+          });
+        }
+        setBankAccountOptions(Array.from(namesSet));
 
         if (settingsRes.data && settingsRes.data.length > 0) {
           const map: Record<string, Omit<CardSetting, 'cardName'>> = {};
