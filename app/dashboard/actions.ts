@@ -16,6 +16,7 @@ import { eq, desc, and, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { parseHouseholdCsv } from '@/lib/csv';
 import { createClient } from '@/lib/supabase/server';
+import { normalizeName } from '@/lib/string-utils';
 
 // Helper to safely get user ID without throwing if Supabase env is unconfigured
 async function getSafeUserId(): Promise<string | null> {
@@ -30,25 +31,26 @@ async function getSafeUserId(): Promise<string | null> {
 
 // Automatically classify payment method type by name if not explicitly passed
 function inferPaymentMethodType(name?: string | null, explicitType?: string | null): string {
+  const normalized = normalizeName(name);
   if (explicitType && ['credit_card', 'bank_account', 'cash', 'other'].includes(explicitType)) {
     return explicitType;
   }
-  if (!name) return 'other';
-  const lower = name.toLowerCase();
-  if (name.includes('現金') || lower.includes('cash')) {
+  if (!normalized) return 'other';
+  const lower = normalized.toLowerCase();
+  if (normalized.includes('現金') || lower.includes('cash')) {
     return 'cash';
   }
   if (
-    name.includes('銀行') ||
-    name.includes('口座') ||
-    name.includes('預金') ||
+    normalized.includes('銀行') ||
+    normalized.includes('口座') ||
+    normalized.includes('預金') ||
     lower.includes('bank')
   ) {
     return 'bank_account';
   }
   if (
-    name.includes('カード') ||
-    name.includes('クレカ') ||
+    normalized.includes('カード') ||
+    normalized.includes('クレカ') ||
     lower.includes('card') ||
     lower.includes('visa') ||
     lower.includes('master') ||
@@ -163,12 +165,38 @@ export async function initializeAndMigrateDatabase() {
       );
     `);
 
-    // 5. Update existing payment_methods types if unassigned
+    // 5. Clean up payment_methods whitespace & deduplicate entries
     const pMethods = await db.select().from(paymentMethods);
+    const pmSeen = new Map<string, number>();
     for (const pm of pMethods) {
-      const inferred = inferPaymentMethodType(pm.name, pm.type);
-      if (pm.type !== inferred && pm.type === 'other') {
-        await db.update(paymentMethods).set({ type: inferred }).where(eq(paymentMethods.id, pm.id));
+      const normalizedName = normalizeName(pm.name);
+      const inferred = inferPaymentMethodType(normalizedName, pm.type);
+
+      if (pmSeen.has(normalizedName)) {
+        // Re-link transactions pointing to duplicate pm to original pm
+        const keepId = pmSeen.get(normalizedName)!;
+        await db.update(transactions).set({ paymentMethodId: keepId }).where(eq(transactions.paymentMethodId, pm.id));
+        await db.update(bankAccounts).set({ paymentMethodId: keepId }).where(eq(bankAccounts.paymentMethodId, pm.id));
+        await db.update(cardSettings).set({ paymentMethodId: keepId }).where(eq(cardSettings.paymentMethodId, pm.id));
+        await db.delete(paymentMethods).where(eq(paymentMethods.id, pm.id));
+      } else {
+        pmSeen.set(normalizedName, pm.id);
+        await db.update(paymentMethods).set({ name: normalizedName, type: inferred }).where(eq(paymentMethods.id, pm.id));
+      }
+    }
+
+    // Clean up bank_accounts whitespace & deduplicate
+    const bAccs = await db.select().from(bankAccounts);
+    const baSeen = new Map<string, number>();
+    for (const ba of bAccs) {
+      const normalizedAcc = normalizeName(ba.accountName);
+      if (baSeen.has(normalizedAcc)) {
+        const keepId = baSeen.get(normalizedAcc)!;
+        await db.update(bankBalances).set({ bankAccountId: keepId }).where(eq(bankBalances.bankAccountId, ba.id));
+        await db.delete(bankAccounts).where(eq(bankAccounts.id, ba.id));
+      } else {
+        baSeen.set(normalizedAcc, ba.id);
+        await db.update(bankAccounts).set({ accountName: normalizedAcc }).where(eq(bankAccounts.id, ba.id));
       }
     }
 
@@ -203,19 +231,21 @@ async function getOrCreateTypeId(name?: string | null): Promise<number | null> {
 }
 
 async function getOrCreatePaymentMethodId(name?: string | null, explicitType?: string | null): Promise<number | null> {
-  if (!name || !name.trim()) return null;
-  const trimmed = name.trim();
-  const pmType = inferPaymentMethodType(trimmed, explicitType);
+  const normalized = normalizeName(name);
+  if (!normalized) return null;
+  const pmType = inferPaymentMethodType(normalized, explicitType);
 
-  const existing = await db.select().from(paymentMethods).where(eq(paymentMethods.name, trimmed));
-  if (existing.length > 0) {
-    // If explicit type is provided and current type is 'other', update it
-    if (explicitType && existing[0].type === 'other') {
-      await db.update(paymentMethods).set({ type: explicitType }).where(eq(paymentMethods.id, existing[0].id));
+  const allPm = await db.select().from(paymentMethods);
+  const existing = allPm.find((p) => normalizeName(p.name) === normalized);
+
+  if (existing) {
+    if (explicitType && existing.type === 'other') {
+      await db.update(paymentMethods).set({ type: explicitType }).where(eq(paymentMethods.id, existing.id));
     }
-    return existing[0].id;
+    return existing.id;
   }
-  const inserted = await db.insert(paymentMethods).values({ name: trimmed, type: pmType }).returning();
+
+  const inserted = await db.insert(paymentMethods).values({ name: normalized, type: pmType }).returning();
   return inserted[0].id;
 }
 
@@ -488,20 +518,18 @@ export async function upsertCardSettingInDb(
   setting: { isCreditCard?: boolean; closingDay: number; paymentMonthOffset: number; paymentDay: number }
 ) {
   try {
-    if (!cardName || !cardName.trim()) {
+    const normalizedCardName = normalizeName(cardName);
+    if (!normalizedCardName) {
       return { success: false, error: 'カード名が無効です' };
     }
-    const trimmedCardName = cardName.trim();
     const isCreditCard = setting.isCreditCard ?? true;
-    const paymentMethodId = await getOrCreatePaymentMethodId(trimmedCardName, 'credit_card');
+    const paymentMethodId = await getOrCreatePaymentMethodId(normalizedCardName, 'credit_card');
 
     // Check existing
-    const existing = await db
-      .select()
-      .from(cardSettings)
-      .where(eq(cardSettings.cardName, trimmedCardName));
+    const allSettings = await db.select().from(cardSettings);
+    const existing = allSettings.find((s) => normalizeName(s.cardName) === normalizedCardName);
 
-    if (existing.length > 0) {
+    if (existing) {
       await db
         .update(cardSettings)
         .set({
@@ -512,11 +540,11 @@ export async function upsertCardSettingInDb(
           paymentDay: setting.paymentDay,
           updatedAt: new Date(),
         })
-        .where(eq(cardSettings.cardName, trimmedCardName));
+        .where(eq(cardSettings.id, existing.id));
     } else {
       await db.insert(cardSettings).values({
         paymentMethodId,
-        cardName: trimmedCardName,
+        cardName: normalizedCardName,
         isCreditCard,
         closingDay: setting.closingDay,
         paymentMonthOffset: setting.paymentMonthOffset,
@@ -716,16 +744,24 @@ export async function getBankAccounts() {
 
 export async function addBankAccount(accountName: string, bankName?: string, accountNumber?: string) {
   try {
-    if (!accountName || !accountName.trim()) {
+    const normalizedAccName = normalizeName(accountName);
+    if (!normalizedAccName) {
       return { success: false, error: '口座名を入力してください' };
     }
     const userId = await getSafeUserId();
-    const paymentMethodId = await getOrCreatePaymentMethodId(accountName.trim(), 'bank_account');
+    const paymentMethodId = await getOrCreatePaymentMethodId(normalizedAccName, 'bank_account');
+
+    // Check if account already exists with normalized name
+    const existingAccounts = await db.select().from(bankAccounts);
+    const existing = existingAccounts.find((a) => normalizeName(a.accountName) === normalizedAccName);
+    if (existing) {
+      return { success: true, data: existing, error: null };
+    }
 
     const insertValues: typeof bankAccounts.$inferInsert = {
       paymentMethodId,
-      accountName: accountName.trim(),
-      bankName: bankName?.trim() || null,
+      accountName: normalizedAccName,
+      bankName: bankName ? normalizeName(bankName) : null,
       accountNumber: accountNumber?.trim() || null,
     };
 
@@ -795,7 +831,8 @@ export async function getBankBalances(accountName?: string) {
 
 export async function addBankBalanceRecord(accountName: string, balance: number, recordDate: string, memo?: string) {
   try {
-    if (!accountName || !accountName.trim()) {
+    const normalizedAccName = normalizeName(accountName);
+    if (!normalizedAccName) {
       return { success: false, error: '口座名が無効です' };
     }
     if (isNaN(balance)) {
@@ -805,16 +842,14 @@ export async function addBankBalanceRecord(accountName: string, balance: number,
     const userId = await getSafeUserId();
 
     // Find bankAccountId by accountName or create bankAccount
-    const existingAccounts = await db
-      .select()
-      .from(bankAccounts)
-      .where(eq(bankAccounts.accountName, accountName.trim()));
+    const allAccounts = await db.select().from(bankAccounts);
+    const existing = allAccounts.find((a) => normalizeName(a.accountName) === normalizedAccName);
 
     let bankAccountId: number;
-    if (existingAccounts.length > 0) {
-      bankAccountId = existingAccounts[0].id;
+    if (existing) {
+      bankAccountId = existing.id;
     } else {
-      const addRes = await addBankAccount(accountName.trim());
+      const addRes = await addBankAccount(normalizedAccName);
       if (!addRes.success || !addRes.data) {
         return { success: false, error: '銀行口座の自動登録に失敗しました' };
       }

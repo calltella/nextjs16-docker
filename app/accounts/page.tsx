@@ -10,6 +10,7 @@ import {
   deleteBankBalanceRecord,
   getPaymentMethodsCategorized,
 } from '@/app/dashboard/actions';
+import { normalizeName } from '@/lib/string-utils';
 
 interface BankAccountItem {
   id: number;
@@ -144,41 +145,55 @@ export default function BankAccountsPage() {
     }
   };
 
-  // Merge local & db
+  // Merge local & db with normalized account names
   const accounts = useMemo(() => {
     const map = new Map<string, BankAccountItem>();
-    localAccounts.forEach((acc) => map.set(acc.accountName, acc));
-    dbAccounts.forEach((acc) => map.set(acc.accountName, acc));
+    localAccounts.forEach((acc) => map.set(normalizeName(acc.accountName), { ...acc, accountName: normalizeName(acc.accountName) }));
+    dbAccounts.forEach((acc) => map.set(normalizeName(acc.accountName), { ...acc, accountName: normalizeName(acc.accountName) }));
     return Array.from(map.values());
   }, [localAccounts, dbAccounts]);
 
   const balances = useMemo(() => {
     const map = new Map<string, BankBalanceItem>();
-    localBalances.forEach((b) => map.set(`${b.accountName}_${b.recordDate}_${b.balance}`, b));
-    dbBalances.forEach((b) => map.set(`${b.accountName}_${b.recordDate}_${b.balance}`, b));
+    localBalances.forEach((b) => {
+      const normName = normalizeName(b.accountName);
+      map.set(`${normName}_${b.recordDate}_${b.balance}`, { ...b, accountName: normName });
+    });
+    dbBalances.forEach((b) => {
+      const normName = normalizeName(b.accountName);
+      map.set(`${normName}_${b.recordDate}_${b.balance}`, { ...b, accountName: normName });
+    });
     return Array.from(map.values());
   }, [localBalances, dbBalances]);
 
   // Group payment methods by type ('credit_card', 'bank_account', 'cash', 'other')
   const categorizedPaymentMethods = useMemo(() => {
-    const creditCards: PaymentMethodItem[] = [];
-    const bankAccountsList: PaymentMethodItem[] = [];
-    const cashList: PaymentMethodItem[] = [];
-    const otherList: PaymentMethodItem[] = [];
+    const creditCardsMap = new Map<string, PaymentMethodItem>();
+    const bankAccountsMap = new Map<string, PaymentMethodItem>();
+    const cashMap = new Map<string, PaymentMethodItem>();
+    const otherMap = new Map<string, PaymentMethodItem>();
 
     paymentMethods.forEach((pm) => {
+      const normName = normalizeName(pm.name);
+      const item = { ...pm, name: normName };
+
       if (pm.type === 'credit_card') {
-        creditCards.push(pm);
+        creditCardsMap.set(normName, item);
       } else if (pm.type === 'bank_account') {
-        bankAccountsList.push(pm);
+        bankAccountsMap.set(normName, item);
       } else if (pm.type === 'cash') {
-        cashList.push(pm);
+        cashMap.set(normName, item);
       } else {
-        otherList.push(pm);
+        otherMap.set(normName, item);
       }
     });
 
-    return { creditCards, bankAccountsList, cashList, otherList };
+    return {
+      creditCards: Array.from(creditCardsMap.values()),
+      bankAccountsList: Array.from(bankAccountsMap.values()),
+      cashList: Array.from(cashMap.values()),
+      otherList: Array.from(otherMap.values()),
+    };
   }, [paymentMethods]);
 
   // Compute latest balance for each account
@@ -186,11 +201,12 @@ export default function BankAccountsPage() {
     const map: Record<string, { latestBalance: number; latestDate: string }> = {};
 
     balances.forEach((item) => {
+      const normName = normalizeName(item.accountName);
       if (
-        !map[item.accountName] ||
-        item.recordDate > map[item.accountName].latestDate
+        !map[normName] ||
+        item.recordDate > map[normName].latestDate
       ) {
-        map[item.accountName] = {
+        map[normName] = {
           latestBalance: item.balance,
           latestDate: item.recordDate,
         };
@@ -203,9 +219,9 @@ export default function BankAccountsPage() {
   // Combined accounts list (from bank_accounts or balance records or payment_methods of type bank_account)
   const allAccountNames = useMemo(() => {
     const namesSet = new Set<string>();
-    accounts.forEach((acc) => namesSet.add(acc.accountName));
-    balances.forEach((bal) => namesSet.add(bal.accountName));
-    categorizedPaymentMethods.bankAccountsList.forEach((pm) => namesSet.add(pm.name));
+    accounts.forEach((acc) => namesSet.add(normalizeName(acc.accountName)));
+    balances.forEach((bal) => namesSet.add(normalizeName(bal.accountName)));
+    categorizedPaymentMethods.bankAccountsList.forEach((pm) => namesSet.add(normalizeName(pm.name)));
     return Array.from(namesSet);
   }, [accounts, balances, categorizedPaymentMethods]);
 
@@ -214,8 +230,9 @@ export default function BankAccountsPage() {
   // Balance history for active account
   const activeAccountBalances = useMemo(() => {
     if (!activeAccount) return [];
+    const normActive = normalizeName(activeAccount);
     return balances
-      .filter((b) => b.accountName === activeAccount)
+      .filter((b) => normalizeName(b.accountName) === normActive)
       .sort((a, b) => b.recordDate.localeCompare(a.recordDate));
   }, [balances, activeAccount]);
 
