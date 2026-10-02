@@ -58,14 +58,40 @@ interface TransactionItem {
 
 const ACCOUNTS_STORAGE_KEY = 'kakeibo_bank_accounts_v1';
 const BALANCES_STORAGE_KEY = 'kakeibo_bank_balances_v1';
+const CARD_SETTINGS_STORAGE_KEY = 'kakeibo_card_settings_v1';
 
 function subscribeLocalStorage(callback: () => void) {
   window.addEventListener('storage', callback);
   window.addEventListener('kakeibo_accounts_change', callback);
+  window.addEventListener('kakeibo_card_settings_change', callback);
   return () => {
     window.removeEventListener('storage', callback);
     window.removeEventListener('kakeibo_accounts_change', callback);
+    window.removeEventListener('kakeibo_card_settings_change', callback);
   };
+}
+
+const EMPTY_CARD_SETTINGS_MAP: Record<string, Omit<CardSetting, 'cardName'>> = {};
+let cachedCardSettingsRaw: string | null = null;
+let cachedCardSettingsMap: Record<string, Omit<CardSetting, 'cardName'>> = EMPTY_CARD_SETTINGS_MAP;
+
+function getCardSettingsSnapshot(): Record<string, Omit<CardSetting, 'cardName'>> {
+  if (typeof window === 'undefined') return EMPTY_CARD_SETTINGS_MAP;
+  try {
+    const raw = localStorage.getItem(CARD_SETTINGS_STORAGE_KEY);
+    if (raw === cachedCardSettingsRaw) {
+      return cachedCardSettingsMap;
+    }
+    cachedCardSettingsRaw = raw;
+    cachedCardSettingsMap = raw ? JSON.parse(raw) : EMPTY_CARD_SETTINGS_MAP;
+    return cachedCardSettingsMap;
+  } catch {
+    return EMPTY_CARD_SETTINGS_MAP;
+  }
+}
+
+function getServerCardSettingsSnapshot(): Record<string, Omit<CardSetting, 'cardName'>> {
+  return EMPTY_CARD_SETTINGS_MAP;
 }
 
 let cachedAccountsRaw: string | null = null;
@@ -106,12 +132,21 @@ function getServerSnapshot() {
 export default function BankAccountsPage() {
   const localAccounts = useSyncExternalStore(subscribeLocalStorage, getAccountsSnapshot, getServerSnapshot) as BankAccountItem[];
   const localBalances = useSyncExternalStore(subscribeLocalStorage, getBalancesSnapshot, getServerSnapshot) as BankBalanceItem[];
+  const localCardSettingsMap = useSyncExternalStore(
+    subscribeLocalStorage,
+    getCardSettingsSnapshot,
+    getServerCardSettingsSnapshot
+  );
 
   const [dbAccounts, setDbAccounts] = useState<BankAccountItem[]>([]);
   const [dbBalances, setDbBalances] = useState<BankBalanceItem[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodItem[]>([]);
   const [allTransactions, setAllTransactions] = useState<TransactionItem[]>([]);
-  const [cardSettingsMap, setCardSettingsMap] = useState<Record<string, Omit<CardSetting, 'cardName'>>>({});
+  const [dbCardSettingsMap, setDbCardSettingsMap] = useState<Record<string, Omit<CardSetting, 'cardName'>>>({});
+
+  const cardSettingsMap = useMemo(() => {
+    return { ...localCardSettingsMap, ...dbCardSettingsMap };
+  }, [localCardSettingsMap, dbCardSettingsMap]);
 
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -171,9 +206,10 @@ export default function BankAccountsPage() {
               closingDay: row.closingDay,
               paymentMonthOffset: row.paymentMonthOffset,
               paymentDay: row.paymentDay,
+              linkedBankAccount: row.linkedBankAccount ? normalizeName(row.linkedBankAccount) : '',
             };
           });
-          setCardSettingsMap(map);
+          setDbCardSettingsMap(map);
         }
         setLoading(false);
       }
@@ -267,14 +303,19 @@ export default function BankAccountsPage() {
     return map;
   }, [balances]);
 
-  // Combined accounts list (from bank_accounts or balance records or payment_methods of type bank_account)
+  // Combined accounts list (from bank_accounts or balance records or payment_methods of type bank_account or linked bank accounts)
   const allAccountNames = useMemo(() => {
     const namesSet = new Set<string>();
     accounts.forEach((acc) => namesSet.add(normalizeName(acc.accountName)));
     balances.forEach((bal) => namesSet.add(normalizeName(bal.accountName)));
     categorizedPaymentMethods.bankAccountsList.forEach((pm) => namesSet.add(normalizeName(pm.name)));
+    Object.values(cardSettingsMap).forEach((setting) => {
+      if (setting.linkedBankAccount) {
+        namesSet.add(normalizeName(setting.linkedBankAccount));
+      }
+    });
     return Array.from(namesSet);
-  }, [accounts, balances, categorizedPaymentMethods]);
+  }, [accounts, balances, categorizedPaymentMethods, cardSettingsMap]);
 
   const activeAccount = selectedAccountName || (allAccountNames.length > 0 ? allAccountNames[0] : '');
 
@@ -346,10 +387,14 @@ export default function BankAccountsPage() {
       const cardName = normalizeName(card.name);
       const setting = cardSettingsMap[cardName] || DEFAULT_CARD_SETTING;
 
-      // If card has a designated linked bank account, match it strictly with normActive
+      // Check linked bank account match
       const linkedAccount = setting.linkedBankAccount ? normalizeName(setting.linkedBankAccount) : '';
-      if (linkedAccount && linkedAccount !== normActive) {
-        return; // Skip this card deduction if it's assigned to a different bank account
+
+      // If linkedAccount is set, strictly check if it matches normActive
+      // If linkedAccount is empty, assign to the primary/first bank account by default
+      const targetAccount = linkedAccount || (allAccountNames.length > 0 ? normalizeName(allAccountNames[0]) : '');
+      if (targetAccount !== normActive) {
+        return; // Skip this card deduction if not targeted for active account
       }
 
       // Check payment months in vicinity
@@ -413,6 +458,7 @@ export default function BankAccountsPage() {
     return { initialBalance, logItems };
   }, [
     activeAccount,
+    allAccountNames,
     allTransactions,
     balances,
     cardSettingsMap,
