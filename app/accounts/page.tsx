@@ -8,6 +8,7 @@ import {
   getBankBalances,
   addBankBalanceRecord,
   deleteBankBalanceRecord,
+  getPaymentMethodsCategorized,
 } from '@/app/dashboard/actions';
 
 interface BankAccountItem {
@@ -27,6 +28,12 @@ interface BankBalanceItem {
   balance: number;
   memo?: string | null;
   createdAt: Date | string;
+}
+
+interface PaymentMethodItem {
+  id: number;
+  name: string;
+  type: string; // 'credit_card', 'bank_account', 'cash', 'other'
 }
 
 const ACCOUNTS_STORAGE_KEY = 'kakeibo_bank_accounts_v1';
@@ -82,6 +89,7 @@ export default function BankAccountsPage() {
 
   const [dbAccounts, setDbAccounts] = useState<BankAccountItem[]>([]);
   const [dbBalances, setDbBalances] = useState<BankBalanceItem[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethodItem[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -104,13 +112,16 @@ export default function BankAccountsPage() {
 
   useEffect(() => {
     let ignore = false;
-    Promise.all([getBankAccounts(), getBankBalances()]).then(([accRes, balRes]) => {
+    Promise.all([getBankAccounts(), getBankBalances(), getPaymentMethodsCategorized()]).then(([accRes, balRes, pmRes]) => {
       if (!ignore) {
         if (accRes.data) {
           setDbAccounts(accRes.data as BankAccountItem[]);
         }
         if (balRes.data) {
           setDbBalances(balRes.data as BankBalanceItem[]);
+        }
+        if (pmRes.data) {
+          setPaymentMethods(pmRes.data as PaymentMethodItem[]);
         }
         setLoading(false);
       }
@@ -121,12 +132,15 @@ export default function BankAccountsPage() {
   }, []);
 
   const refreshDbData = async () => {
-    const [accRes, balRes] = await Promise.all([getBankAccounts(), getBankBalances()]);
+    const [accRes, balRes, pmRes] = await Promise.all([getBankAccounts(), getBankBalances(), getPaymentMethodsCategorized()]);
     if (accRes.data) {
       setDbAccounts(accRes.data as BankAccountItem[]);
     }
     if (balRes.data) {
       setDbBalances(balRes.data as BankBalanceItem[]);
+    }
+    if (pmRes.data) {
+      setPaymentMethods(pmRes.data as PaymentMethodItem[]);
     }
   };
 
@@ -144,6 +158,28 @@ export default function BankAccountsPage() {
     dbBalances.forEach((b) => map.set(`${b.accountName}_${b.recordDate}_${b.balance}`, b));
     return Array.from(map.values());
   }, [localBalances, dbBalances]);
+
+  // Group payment methods by type ('credit_card', 'bank_account', 'cash', 'other')
+  const categorizedPaymentMethods = useMemo(() => {
+    const creditCards: PaymentMethodItem[] = [];
+    const bankAccountsList: PaymentMethodItem[] = [];
+    const cashList: PaymentMethodItem[] = [];
+    const otherList: PaymentMethodItem[] = [];
+
+    paymentMethods.forEach((pm) => {
+      if (pm.type === 'credit_card') {
+        creditCards.push(pm);
+      } else if (pm.type === 'bank_account') {
+        bankAccountsList.push(pm);
+      } else if (pm.type === 'cash') {
+        cashList.push(pm);
+      } else {
+        otherList.push(pm);
+      }
+    });
+
+    return { creditCards, bankAccountsList, cashList, otherList };
+  }, [paymentMethods]);
 
   // Compute latest balance for each account
   const accountLatestBalances = useMemo(() => {
@@ -164,13 +200,14 @@ export default function BankAccountsPage() {
     return map;
   }, [balances]);
 
-  // Combined accounts list (from bank_accounts or balance records)
+  // Combined accounts list (from bank_accounts or balance records or payment_methods of type bank_account)
   const allAccountNames = useMemo(() => {
     const namesSet = new Set<string>();
     accounts.forEach((acc) => namesSet.add(acc.accountName));
     balances.forEach((bal) => namesSet.add(bal.accountName));
+    categorizedPaymentMethods.bankAccountsList.forEach((pm) => namesSet.add(pm.name));
     return Array.from(namesSet);
-  }, [accounts, balances]);
+  }, [accounts, balances, categorizedPaymentMethods]);
 
   const activeAccount = selectedAccountName || (allAccountNames.length > 0 ? allAccountNames[0] : '');
 
@@ -208,7 +245,7 @@ export default function BankAccountsPage() {
       // ignore
     }
 
-    setSuccessMsg(`「${name}」を追加しました`);
+    setSuccessMsg(`「${name}」を銀行口座として追加登録しました`);
     setSelectedAccountName(name);
     setNewAccountName('');
     setNewBankName('');
@@ -313,7 +350,7 @@ export default function BankAccountsPage() {
               <span>🏦</span> 銀行口座・残高管理
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              銀行口座の現在残高を随時記録し、口座別の最新残高と総資産履歴を記録・可視化できます。
+              支払方法 (payment_methods) から「銀行口座」カテゴリを区別管理し、現在残高の記録と総資産の推移を可視化します。
             </p>
           </div>
 
@@ -324,6 +361,42 @@ export default function BankAccountsPage() {
           >
             ＋ 銀行口座を追加
           </button>
+        </div>
+
+        {/* Payment Methods Classification Overview Card */}
+        <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm space-y-3">
+          <h2 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+            <span>🏷️</span> 支払方法 (payment_methods) カテゴリ分類状況
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800/50 rounded-xl">
+              <div className="text-blue-800 dark:text-blue-300 font-semibold mb-1">🏦 銀行口座 ({categorizedPaymentMethods.bankAccountsList.length})</div>
+              <div className="text-gray-600 dark:text-gray-300 font-bold truncate">
+                {categorizedPaymentMethods.bankAccountsList.map((m) => m.name).join(', ') || '登録なし'}
+              </div>
+            </div>
+
+            <div className="p-3 bg-purple-50 dark:bg-purple-900/30 border border-purple-100 dark:border-purple-800/50 rounded-xl">
+              <div className="text-purple-800 dark:text-purple-300 font-semibold mb-1">💳 クレジットカード ({categorizedPaymentMethods.creditCards.length})</div>
+              <div className="text-gray-600 dark:text-gray-300 font-bold truncate">
+                {categorizedPaymentMethods.creditCards.map((m) => m.name).join(', ') || '登録なし'}
+              </div>
+            </div>
+
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-100 dark:border-emerald-800/50 rounded-xl">
+              <div className="text-emerald-800 dark:text-emerald-300 font-semibold mb-1">💵 現金 ({categorizedPaymentMethods.cashList.length})</div>
+              <div className="text-gray-600 dark:text-gray-300 font-bold truncate">
+                {categorizedPaymentMethods.cashList.map((m) => m.name).join(', ') || '登録なし'}
+              </div>
+            </div>
+
+            <div className="p-3 bg-gray-50 dark:bg-gray-750 border border-gray-200 dark:border-gray-700 rounded-xl">
+              <div className="text-gray-700 dark:text-gray-300 font-semibold mb-1">⚙️ その他 ({categorizedPaymentMethods.otherList.length})</div>
+              <div className="text-gray-600 dark:text-gray-300 font-bold truncate">
+                {categorizedPaymentMethods.otherList.map((m) => m.name).join(', ') || 'なし'}
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Global Assets Summary Banner */}
@@ -362,7 +435,7 @@ export default function BankAccountsPage() {
           <div className="p-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-md space-y-4">
             <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-700 pb-3">
               <h3 className="font-bold text-sm flex items-center gap-2">
-                <span>➕</span> 新規銀行口座の登録
+                <span>➕</span> 新規銀行口座の登録 (payment_methods: bank_account)
               </h3>
               <button
                 type="button"
@@ -454,6 +527,9 @@ export default function BankAccountsPage() {
                         <span className="font-bold text-base truncate flex items-center gap-1.5">
                           <span>🏦</span>
                           <span>{accName}</span>
+                        </span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-100 dark:bg-teal-900/50 text-teal-800 dark:text-teal-300 font-semibold">
+                          銀行口座
                         </span>
                       </div>
 

@@ -19,6 +19,7 @@ export const transactionTypes = pgTable('transaction_types', {
 export const paymentMethods = pgTable('payment_methods', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
   name: text('name').notNull().unique(),
+  type: text('type').notNull().default('other'), // 'credit_card', 'bank_account', 'cash', 'other'
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
