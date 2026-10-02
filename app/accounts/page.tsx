@@ -19,6 +19,7 @@ import { CardSetting, DEFAULT_CARD_SETTING, getBillingCycleForPaymentMonth } fro
 interface BankAccountItem {
   id: number;
   userId: string;
+  paymentMethodId?: number | null;
   accountName: string;
   bankName?: string | null;
   accountNumber?: string | null;
@@ -46,6 +47,7 @@ interface TransactionItem {
   date: string;
   type: string;
   paymentMethod?: string | null;
+  paymentMethodId?: number | null;
   paymentMethodType?: string | null;
   parentCategory?: string | null;
   childCategory?: string | null;
@@ -299,7 +301,16 @@ export default function BankAccountsPage() {
 
   const activeAccount = selectedAccountName || (allAccountNames.length > 0 ? allAccountNames[0] : '');
 
-  // Identify credit card names accurately (excluding bank accounts)
+  // Map payment method normalized name to ID
+  const pmNameToIdMap = useMemo(() => {
+    const map = new Map<string, number>();
+    paymentMethods.forEach((pm) => {
+      map.set(normalizeName(pm.name), pm.id);
+    });
+    return map;
+  }, [paymentMethods]);
+
+  // Identify credit card names and paymentMethodIds accurately
   const creditCardNamesSet = useMemo(() => {
     const set = new Set<string>();
     const bankNamesSet = new Set<string>();
@@ -323,6 +334,16 @@ export default function BankAccountsPage() {
     return set;
   }, [categorizedPaymentMethods, cardSettingsMap, allAccountNames]);
 
+  const creditCardPaymentMethodIdsSet = useMemo(() => {
+    const set = new Set<number>();
+    categorizedPaymentMethods.creditCards.forEach((c) => set.add(c.id));
+    Object.keys(cardSettingsMap).forEach((name) => {
+      const id = pmNameToIdMap.get(normalizeName(name));
+      if (id) set.add(id);
+    });
+    return set;
+  }, [categorizedPaymentMethods, cardSettingsMap, pmNameToIdMap]);
+
   // Compute real-time current balance for each bank account (incorporating transactions & card deductions)
   const accountLatestBalances = useMemo(() => {
     const map: Record<string, { latestBalance: number; latestDate: string }> = {};
@@ -343,12 +364,26 @@ export default function BankAccountsPage() {
       const currentAccObj = accounts.find((a) => normalizeName(a.accountName) === normActive);
       const bankNameNorm = currentAccObj?.bankName ? normalizeName(currentAccObj.bankName) : '';
 
+      const targetPaymentMethodId =
+        currentAccObj?.paymentMethodId ||
+        pmNameToIdMap.get(normActive) ||
+        (bankNameNorm ? pmNameToIdMap.get(bankNameNorm) : undefined);
+
       // Helper to check if a transaction belongs to this bank account
       const isDirectTx = (tx: TransactionItem) => {
         if (!tx.date) return false;
+
+        // Exclude credit cards
+        if (tx.paymentMethodId && creditCardPaymentMethodIdsSet.has(tx.paymentMethodId)) return false;
         const pmNorm = normalizeName(tx.paymentMethod);
         if (pmNorm && creditCardNamesSet.has(pmNorm)) return false;
 
+        // 1. Direct match by transactions.payment_method_id
+        if (tx.paymentMethodId && targetPaymentMethodId && tx.paymentMethodId === targetPaymentMethodId) {
+          return true;
+        }
+
+        // 2. Fallback match by name
         if (pmNorm) {
           const isMatch =
             pmNorm === normActive ||
@@ -437,6 +472,8 @@ export default function BankAccountsPage() {
     cardSettingsMap,
     categorizedPaymentMethods,
     creditCardNamesSet,
+    creditCardPaymentMethodIdsSet,
+    pmNameToIdMap,
     selectedYear,
     selectedMonth,
   ]);
@@ -464,14 +501,27 @@ export default function BankAccountsPage() {
     const currentAccObj = accounts.find((a) => normalizeName(a.accountName) === normActive);
     const bankNameNorm = currentAccObj?.bankName ? normalizeName(currentAccObj.bankName) : '';
 
+    const targetPaymentMethodId =
+      currentAccObj?.paymentMethodId ||
+      pmNameToIdMap.get(normActive) ||
+      (bankNameNorm ? pmNameToIdMap.get(bankNameNorm) : undefined);
+
     // 2. Direct transactions for this bank account (excluding credit card usages)
     const directTx = allTransactions.filter((tx) => {
       if (!tx.date) return false;
       if (tx.date < dateRange.startDate || tx.date > dateRange.endDate) return false;
 
+      // Exclude credit cards
+      if (tx.paymentMethodId && creditCardPaymentMethodIdsSet.has(tx.paymentMethodId)) return false;
       const pmNorm = normalizeName(tx.paymentMethod);
       if (pmNorm && creditCardNamesSet.has(pmNorm)) return false; // exclude card usage
 
+      // 1. Direct match by transactions.payment_method_id
+      if (tx.paymentMethodId && targetPaymentMethodId && tx.paymentMethodId === targetPaymentMethodId) {
+        return true;
+      }
+
+      // 2. Fallback match by name
       if (pmNorm) {
         const isMatch =
           pmNorm === normActive ||
@@ -603,6 +653,8 @@ export default function BankAccountsPage() {
     cardSettingsMap,
     categorizedPaymentMethods,
     creditCardNamesSet,
+    creditCardPaymentMethodIdsSet,
+    pmNameToIdMap,
     dateRange,
     selectedYear,
     selectedMonth,

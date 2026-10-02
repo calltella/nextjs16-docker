@@ -411,6 +411,7 @@ export async function getTransactions() {
         date: transactions.date,
         type: transactionTypes.name,
         paymentMethod: paymentMethods.name,
+        paymentMethodId: transactions.paymentMethodId,
         paymentMethodType: paymentMethods.type,
         parentCategory: parentCategories.name,
         childCategory: childCategories.name,
