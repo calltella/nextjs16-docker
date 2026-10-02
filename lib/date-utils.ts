@@ -15,6 +15,8 @@ export function formatDate(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+const JAPANESE_DAYS = ['日', '月', '火', '水', '木', '金', '土'];
+
 /**
  * Formats YYYY-MM-DD date string to Japanese format (e.g., "2026年3月25日").
  */
@@ -26,6 +28,21 @@ export function formatDateJapanese(dateStr: string): string {
   const month = parseInt(parts[1], 10);
   const day = parseInt(parts[2], 10);
   return `${year}年${month}月${day}日`;
+}
+
+/**
+ * Formats YYYY-MM-DD date string to include Japanese day of week (e.g., "2026-03-16 (月)").
+ */
+export function formatDateWithDayOfWeek(dateStr: string): string {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const y = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  const d = parseInt(parts[2], 10);
+  const date = new Date(y, m - 1, d);
+  const dayOfWeekStr = JAPANESE_DAYS[date.getDay()];
+  return `${dateStr} (${dayOfWeekStr})`;
 }
 
 /**

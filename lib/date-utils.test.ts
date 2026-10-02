@@ -2,6 +2,7 @@ import {
   getDaysInMonth,
   formatDate,
   formatDateJapanese,
+  formatDateWithDayOfWeek,
   getMonthlyDateRange,
   isJapaneseHoliday,
   isHolidayOrWeekend,
@@ -24,6 +25,10 @@ assertEqual(formatDate(new Date(2026, 2, 15)), '2026-03-15', 'Format date');
 
 // Test formatDateJapanese
 assertEqual(formatDateJapanese('2026-03-25'), '2026年3月25日', 'Format date JP');
+
+// Test formatDateWithDayOfWeek
+assertEqual(formatDateWithDayOfWeek('2026-03-16'), '2026-03-16 (月)', 'Format date with day of week (Mon)');
+assertEqual(formatDateWithDayOfWeek('2026-03-15'), '2026-03-15 (日)', 'Format date with day of week (Sun)');
 
 // Test isJapaneseHoliday
 assertEqual(isJapaneseHoliday(2026, 1, 1), true, 'Jan 1 is 元日');

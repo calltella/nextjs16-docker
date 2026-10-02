@@ -13,7 +13,7 @@ import {
   getCardSettingsFromDb,
 } from '@/app/dashboard/actions';
 import { normalizeName } from '@/lib/string-utils';
-import { getMonthlyDateRange, formatDateJapanese } from '@/lib/date-utils';
+import { getMonthlyDateRange, formatDateJapanese, formatDateWithDayOfWeek } from '@/lib/date-utils';
 import { CardSetting, DEFAULT_CARD_SETTING, getBillingCycleForPaymentMonth } from '@/lib/card-settings';
 
 interface BankAccountItem {
@@ -912,7 +912,7 @@ export default function BankAccountsPage() {
                         </div>
 
                         <div className="col-span-3 sm:col-span-2 text-gray-600 dark:text-gray-300 font-semibold">
-                          {item.date}
+                          {formatDateWithDayOfWeek(item.date)}
                         </div>
 
                         <div className="col-span-4 sm:col-span-5 flex flex-col sm:flex-row sm:items-center gap-1">
