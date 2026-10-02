@@ -6,6 +6,7 @@ import {
   importCsv,
   getWorkTransactionsSummary,
   saveWorkToNormalizedTransactions,
+  initializeAndMigrateDatabase,
 } from '@/app/dashboard/actions';
 import Link from 'next/link';
 
@@ -83,6 +84,31 @@ export default function ImportPage() {
     });
   };
 
+  const handleInitializeAndMigrateDatabase = async () => {
+    if (
+      !confirm(
+        `【アプリ側でのテーブル作成 & データ正規化】\n\n` +
+        `データベースに必要な正規化テーブル（transaction_types, payment_methods, parent_categories, child_categories, card_settings, bank_accounts, bank_balances, transactions）が存在しない場合は自動作成し、\n` +
+        `作業用テーブル (transactions_work) のデータを正規化して transactions テーブルに全件保存します。\n\n実行しますか？`
+      )
+    ) {
+      return;
+    }
+
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    startTransition(async () => {
+      const res = await initializeAndMigrateDatabase();
+      if (!res.success) {
+        setErrorMsg(res.error || 'アプリ側でのテーブル作成・正規化処理に失敗しました');
+      } else {
+        setSuccessMsg(`🎉 アプリ側で必要なテーブルを自動作成し、作業用テーブルから ${res.count} 件の明細を正規化テーブル (transactions) に保存・同期しました！`);
+        await loadSummary();
+      }
+    });
+  };
+
   const handleSaveToNormalizedTransactions = async () => {
     if (!workSummary || workSummary.count === 0) {
       setErrorMsg('保存対象の作業用データが存在しません。CSVファイルを先に取り込んでください。');
@@ -122,6 +148,27 @@ export default function ImportPage() {
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             家計簿CSVファイルを作業用テーブル (transactions_work) に取り込んでデータ分析を行い、正規化テーブル (transactions) に一括保存できます。
           </p>
+        </div>
+
+        {/* Database Initialization Action Banner */}
+        <div className="p-5 bg-gradient-to-r from-purple-500 via-indigo-600 to-blue-600 rounded-2xl text-white shadow-md flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <div className="text-xs text-purple-100 font-bold uppercase tracking-wider">
+              🛠️ データベース自動セットアップ（アプリ側での実行）
+            </div>
+            <div className="text-xs text-purple-200 mt-1">
+              Supabaseでの手動SQL実行を行わず、アプリ側でテーブル群の作成・正規化・データ移行を直接実行できます。
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleInitializeAndMigrateDatabase}
+            disabled={isPending}
+            className="whitespace-nowrap px-5 py-2.5 bg-white text-indigo-700 hover:bg-purple-50 font-bold text-xs rounded-xl shadow transition disabled:opacity-50"
+          >
+            {isPending ? 'セットアップ実行中...' : 'テーブル作成 & データ正規化を実行'}
+          </button>
         </div>
 
         {errorMsg && (
@@ -244,28 +291,28 @@ export default function ImportPage() {
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
                 <div>
-                  <div className="text-gray-500 dark:text-gray-400 font-medium font-bold">総収入金額</div>
+                  <div className="text-gray-500 dark:text-gray-400 font-bold">総収入金額</div>
                   <div className="text-lg font-extrabold text-green-600 dark:text-green-400 mt-0.5">
                     ¥{workSummary.totalIncome.toLocaleString()}
                   </div>
                 </div>
 
                 <div>
-                  <div className="text-gray-500 dark:text-gray-400 font-medium font-bold">総支出金額</div>
+                  <div className="text-gray-500 dark:text-gray-400 font-bold">総支出金額</div>
                   <div className="text-lg font-extrabold text-red-600 dark:text-red-400 mt-0.5">
                     ¥{workSummary.totalExpense.toLocaleString()}
                   </div>
                 </div>
 
                 <div>
-                  <div className="text-gray-500 dark:text-gray-400 font-medium font-bold">差引収支</div>
+                  <div className="text-gray-500 dark:text-gray-400 font-bold">差引収支</div>
                   <div className={`text-lg font-extrabold mt-0.5 ${workSummary.balance >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-600'}`}>
                     ¥{workSummary.balance.toLocaleString()}
                   </div>
                 </div>
 
                 <div>
-                  <div className="text-gray-500 dark:text-gray-400 font-medium font-bold">対象期間</div>
+                  <div className="text-gray-500 dark:text-gray-400 font-bold">対象期間</div>
                   <div className="text-xs font-bold text-gray-700 dark:text-gray-300 mt-1">
                     {workSummary.minDate} 〜 {workSummary.maxDate}
                   </div>
