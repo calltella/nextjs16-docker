@@ -886,10 +886,11 @@ export default function BankAccountsPage() {
               {/* Monthly Account Line Items & Running Balance Table */}
               <div className="divide-y divide-gray-100 dark:divide-gray-700">
                 <div className="p-4 bg-gray-50 dark:bg-gray-750 text-xs font-bold text-gray-500 dark:text-gray-400 grid grid-cols-12 gap-2 items-center">
+                  <div className="col-span-1 text-center">No.</div>
                   <div className="col-span-3 sm:col-span-2">日付</div>
-                  <div className="col-span-5 sm:col-span-6">摘要 / カテゴリ</div>
-                  <div className="col-span-4 sm:col-span-2 text-right">収支額</div>
-                  <div className="col-span-12 sm:col-span-2 text-right">累計残高</div>
+                  <div className="col-span-4 sm:col-span-5">摘要 / カテゴリ</div>
+                  <div className="col-span-2 text-right">収支額</div>
+                  <div className="col-span-2 text-right">累計残高</div>
                 </div>
 
                 {monthlyAccountData.logItems.length === 0 ? (
@@ -897,7 +898,7 @@ export default function BankAccountsPage() {
                     この集計期間中（{dateRange.startDate} 〜 {dateRange.endDate}）の口座出入金・引き落とし記録はありません。
                   </div>
                 ) : (
-                  monthlyAccountData.logItems.map((item) => {
+                  monthlyAccountData.logItems.map((item, index) => {
                     const isIncome = item.type === '収入';
                     return (
                       <div
@@ -906,26 +907,30 @@ export default function BankAccountsPage() {
                           item.isCcDeduction ? 'bg-purple-50/40 dark:bg-purple-900/10' : ''
                         }`}
                       >
+                        <div className="col-span-1 text-center font-bold text-gray-400 dark:text-gray-500 text-xs">
+                          {index + 1}
+                        </div>
+
                         <div className="col-span-3 sm:col-span-2 text-gray-600 dark:text-gray-300 font-semibold">
                           {item.date}
                         </div>
 
-                        <div className="col-span-5 sm:col-span-6 flex flex-col sm:flex-row sm:items-center gap-1">
-                          <span className="font-bold text-gray-900 dark:text-gray-100">{item.title}</span>
+                        <div className="col-span-4 sm:col-span-5 flex flex-col sm:flex-row sm:items-center gap-1">
+                          <span className="font-bold text-gray-900 dark:text-gray-100 truncate">{item.title}</span>
                           {item.category && (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 w-fit">
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 w-fit shrink-0">
                               {item.category}
                             </span>
                           )}
                         </div>
 
-                        <div className="col-span-4 sm:col-span-2 text-right font-bold">
+                        <div className="col-span-2 text-right font-bold">
                           <span className={isIncome ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
                             {isIncome ? '+' : '-'}¥{item.amount.toLocaleString()}
                           </span>
                         </div>
 
-                        <div className="col-span-12 sm:col-span-2 text-right font-extrabold text-teal-600 dark:text-teal-400 border-t sm:border-t-0 pt-1 sm:pt-0 border-gray-100 dark:border-gray-700">
+                        <div className="col-span-2 text-right font-extrabold text-teal-600 dark:text-teal-400">
                           ¥{item.balanceAfter.toLocaleString()}
                         </div>
                       </div>

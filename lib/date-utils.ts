@@ -113,6 +113,18 @@ export function getPrecedingWeekday(year: number, month: number, day: number): D
 }
 
 /**
+ * Finds the next business day (翌営業日) for a given target date (year, month, day).
+ * If the date falls on a Saturday, Sunday, or Japanese holiday, steps forward until finding a business day.
+ */
+export function getNextBusinessDay(year: number, month: number, day: number): Date {
+  const date = new Date(year, month - 1, day);
+  while (isHolidayOrWeekend(date.getFullYear(), date.getMonth() + 1, date.getDate())) {
+    date.setDate(date.getDate() + 1);
+  }
+  return date;
+}
+
+/**
  * Calculates start and end dates for a target year/month given a month start setting.
  * - If adjustPrecedingWeekday is true: computes start date as preceding weekday to 15th of previous month,
  *   and end date as the day before preceding weekday to 15th of target month.

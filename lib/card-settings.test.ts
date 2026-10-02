@@ -14,17 +14,17 @@ console.log('--- Running Card Settings Tests ---');
 // Case 1: 15th closing, next month (offset 1), 10th payment
 const setting15 = { isCreditCard: true, closingDay: 15, paymentMonthOffset: 1, paymentDay: 10 };
 
-// Transaction before/on closing day
+// Transaction before/on closing day (2026-04-10 is Friday -> 2026-04-10)
 const info1 = getPaymentInfoForTransaction('2026-03-10', setting15);
 assertEqual(info1.closingDate, '2026-03-15', '2026-03-10 closing date is 2026-03-15');
 assertEqual(info1.paymentMonth, '2026-04', '2026-03-10 payment month is 2026-04');
 assertEqual(info1.paymentDate, '2026-04-10', '2026-03-10 payment date is 2026-04-10');
 
-// Transaction after closing day
+// Transaction after closing day (2026-05-10 is Sunday -> shifts to Monday 2026-05-11)
 const info2 = getPaymentInfoForTransaction('2026-03-16', setting15);
 assertEqual(info2.closingDate, '2026-04-15', '2026-03-16 closing date is 2026-04-15');
 assertEqual(info2.paymentMonth, '2026-05', '2026-03-16 payment month is 2026-05');
-assertEqual(info2.paymentDate, '2026-05-10', '2026-03-16 payment date is 2026-05-10');
+assertEqual(info2.paymentDate, '2026-05-11', '2026-03-16 payment date shifts from Sunday May 10 to Monday 2026-05-11');
 
 // Billing cycle for 2026-04 payment month
 const cycle1 = getBillingCycleForPaymentMonth('2026-04', setting15);

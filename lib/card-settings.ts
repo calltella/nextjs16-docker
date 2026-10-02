@@ -7,6 +7,8 @@ export interface CardSetting {
   linkedBankAccount?: string; // 引き落とし銀行口座名
 }
 
+import { getNextBusinessDay, formatDate as formatDateObj } from './date-utils';
+
 export const DEFAULT_CARD_SETTING: Omit<CardSetting, 'cardName'> = {
   isCreditCard: true,
   closingDay: 15,
@@ -82,7 +84,9 @@ export function getPaymentInfoForTransaction(
 
   const paymentMonthStr = `${payYear}-${String(payMonth).padStart(2, '0')}`;
   const actualPayDay = normalizeDay(payYear, payMonth, setting.paymentDay);
-  const paymentDateStr = formatDate(payYear, payMonth, actualPayDay);
+  // Shift to next business day (翌営業日) if payment day falls on weekend/holiday
+  const businessDayDate = getNextBusinessDay(payYear, payMonth, actualPayDay);
+  const paymentDateStr = formatDateObj(businessDayDate);
 
   return {
     paymentMonth: paymentMonthStr,
@@ -143,7 +147,9 @@ export function getBillingCycleForPaymentMonth(
   }
 
   const payDay = normalizeDay(pYear, pMonth, setting.paymentDay);
-  const paymentDate = formatDate(pYear, pMonth, payDay);
+  // Shift to next business day (翌営業日) if payment day falls on weekend/holiday
+  const businessDayDate = getNextBusinessDay(pYear, pMonth, payDay);
+  const paymentDate = formatDateObj(businessDayDate);
 
   return {
     billingCycleStart,
