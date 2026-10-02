@@ -115,9 +115,14 @@ export async function initializeAndMigrateDatabase() {
         closing_day INTEGER NOT NULL DEFAULT 15,
         payment_month_offset INTEGER NOT NULL DEFAULT 1,
         payment_day INTEGER NOT NULL DEFAULT 10,
+        linked_bank_account TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+    `);
+
+    await db.execute(sql`
+      ALTER TABLE public.card_settings ADD COLUMN IF NOT EXISTS linked_bank_account TEXT;
     `);
 
     // 3. Create bank_accounts & bank_balances tables
@@ -515,7 +520,7 @@ export async function getCardSettingsFromDb() {
 
 export async function upsertCardSettingInDb(
   cardName: string,
-  setting: { isCreditCard?: boolean; closingDay: number; paymentMonthOffset: number; paymentDay: number }
+  setting: { isCreditCard?: boolean; closingDay: number; paymentMonthOffset: number; paymentDay: number; linkedBankAccount?: string }
 ) {
   try {
     const normalizedCardName = normalizeName(cardName);
@@ -523,6 +528,7 @@ export async function upsertCardSettingInDb(
       return { success: false, error: 'カード名が無効です' };
     }
     const isCreditCard = setting.isCreditCard ?? true;
+    const linkedBankAccount = setting.linkedBankAccount ? normalizeName(setting.linkedBankAccount) : null;
     const paymentMethodId = await getOrCreatePaymentMethodId(normalizedCardName, 'credit_card');
 
     // Check existing
@@ -538,6 +544,7 @@ export async function upsertCardSettingInDb(
           closingDay: setting.closingDay,
           paymentMonthOffset: setting.paymentMonthOffset,
           paymentDay: setting.paymentDay,
+          linkedBankAccount,
           updatedAt: new Date(),
         })
         .where(eq(cardSettings.id, existing.id));
@@ -549,6 +556,7 @@ export async function upsertCardSettingInDb(
         closingDay: setting.closingDay,
         paymentMonthOffset: setting.paymentMonthOffset,
         paymentDay: setting.paymentDay,
+        linkedBankAccount,
       });
     }
 

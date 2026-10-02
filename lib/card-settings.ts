@@ -4,6 +4,7 @@ export interface CardSetting {
   closingDay: number; // 0 = 月末, 1~31 = 日付
   paymentMonthOffset: number; // 0 = 当月, 1 = 翌月, 2 = 翌々月
   paymentDay: number; // 0 = 月末, 1~31 = 日付
+  linkedBankAccount?: string; // 引き落とし銀行口座名
 }
 
 export const DEFAULT_CARD_SETTING: Omit<CardSetting, 'cardName'> = {
@@ -11,6 +12,7 @@ export const DEFAULT_CARD_SETTING: Omit<CardSetting, 'cardName'> = {
   closingDay: 15,
   paymentMonthOffset: 1, // 翌月
   paymentDay: 10,
+  linkedBankAccount: '',
 };
 
 /**

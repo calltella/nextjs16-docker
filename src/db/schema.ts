@@ -78,6 +78,7 @@ export const cardSettings = pgTable('card_settings', {
   closingDay: integer('closing_day').notNull().default(15),
   paymentMonthOffset: integer('payment_month_offset').notNull().default(1),
   paymentDay: integer('payment_day').notNull().default(10),
+  linkedBankAccount: text('linked_bank_account'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

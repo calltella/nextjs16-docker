@@ -9,7 +9,9 @@ import {
   updatePaymentMethodName,
   getCardSettingsFromDb,
   upsertCardSettingInDb,
+  getBankAccounts,
 } from '@/app/dashboard/actions';
+import { normalizeName } from '@/lib/string-utils';
 import Link from 'next/link';
 import {
   CardSetting,
@@ -78,6 +80,7 @@ export default function CardsPage() {
 
   const [dbCardSettings, setDbCardSettings] = useState<Record<string, Omit<CardSetting, 'cardName'>>>({});
   const [dbErrorWarning, setDbErrorWarning] = useState<string | null>(null);
+  const [bankAccountOptions, setBankAccountOptions] = useState<string[]>([]);
 
   const cardSettingsMap = useMemo(() => {
     return { ...cardSettingsLocalStorageMap, ...dbCardSettings };
@@ -129,7 +132,7 @@ export default function CardsPage() {
   useEffect(() => {
     let ignore = false;
 
-    Promise.all([getTransactions(), getCardSettingsFromDb()]).then(([txRes, settingsRes]) => {
+    Promise.all([getTransactions(), getCardSettingsFromDb(), getBankAccounts()]).then(([txRes, settingsRes, bankRes]) => {
       if (!ignore) {
         if (txRes.error) {
           setErrorMsg(txRes.error);
@@ -137,14 +140,20 @@ export default function CardsPage() {
           setItems(txRes.data as TransactionWorkItem[]);
         }
 
+        if (bankRes.data) {
+          const names = bankRes.data.map((b) => normalizeName(b.accountName)).filter(Boolean);
+          setBankAccountOptions(Array.from(new Set(names)));
+        }
+
         if (settingsRes.data && settingsRes.data.length > 0) {
           const map: Record<string, Omit<CardSetting, 'cardName'>> = {};
           settingsRes.data.forEach((row) => {
-            map[row.cardName] = {
+            map[normalizeName(row.cardName)] = {
               isCreditCard: row.isCreditCard ?? true,
               closingDay: row.closingDay,
               paymentMonthOffset: row.paymentMonthOffset,
               paymentDay: row.paymentDay,
+              linkedBankAccount: row.linkedBankAccount ? normalizeName(row.linkedBankAccount) : '',
             };
           });
           setDbCardSettings(map);
@@ -576,7 +585,23 @@ export default function CardsPage() {
               </div>
 
               <div className="space-y-4 text-xs">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 pt-2">
+                  <div>
+                    <label className="block text-gray-500 dark:text-gray-400 mb-1 font-medium">引き落とし口座</label>
+                    <select
+                      value={currentCardSetting.linkedBankAccount || ''}
+                      onChange={(e) => saveCardSetting(selectedCard, { ...currentCardSetting, linkedBankAccount: e.target.value })}
+                      className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 font-semibold"
+                    >
+                      <option value="">未指定 (全口座に対象表示)</option>
+                      {bankAccountOptions.map((accName) => (
+                        <option key={accName} value={accName}>
+                          🏦 {accName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div>
                     <label className="block text-gray-500 dark:text-gray-400 mb-1 font-medium">締め日</label>
                     <select

@@ -346,6 +346,12 @@ export default function BankAccountsPage() {
       const cardName = normalizeName(card.name);
       const setting = cardSettingsMap[cardName] || DEFAULT_CARD_SETTING;
 
+      // If card has a designated linked bank account, match it strictly with normActive
+      const linkedAccount = setting.linkedBankAccount ? normalizeName(setting.linkedBankAccount) : '';
+      if (linkedAccount && linkedAccount !== normActive) {
+        return; // Skip this card deduction if it's assigned to a different bank account
+      }
+
       // Check payment months in vicinity
       const checkMonths: string[] = [];
       const [y, m] = [selectedYear, selectedMonth];
