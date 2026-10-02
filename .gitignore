@@ -43,6 +43,3 @@ next-env.d.ts
 # wrangler files
 .wrangler
 .dev.vars*
-
-src/db/migrations
-src/db/migrations/meta
