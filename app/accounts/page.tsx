@@ -299,13 +299,29 @@ export default function BankAccountsPage() {
 
   const activeAccount = selectedAccountName || (allAccountNames.length > 0 ? allAccountNames[0] : '');
 
-  // Identify credit card names
+  // Identify credit card names accurately (excluding bank accounts)
   const creditCardNamesSet = useMemo(() => {
     const set = new Set<string>();
-    categorizedPaymentMethods.creditCards.forEach((c) => set.add(normalizeName(c.name)));
-    Object.keys(cardSettingsMap).forEach((name) => set.add(normalizeName(name)));
+    const bankNamesSet = new Set<string>();
+    categorizedPaymentMethods.bankAccountsList.forEach((b) => bankNamesSet.add(normalizeName(b.name)));
+    allAccountNames.forEach((a) => bankNamesSet.add(normalizeName(a)));
+
+    categorizedPaymentMethods.creditCards.forEach((c) => {
+      const norm = normalizeName(c.name);
+      if (!bankNamesSet.has(norm)) {
+        set.add(norm);
+      }
+    });
+
+    Object.entries(cardSettingsMap).forEach(([name, setting]) => {
+      const norm = normalizeName(name);
+      if (setting && setting.isCreditCard !== false && !bankNamesSet.has(norm)) {
+        set.add(norm);
+      }
+    });
+
     return set;
-  }, [categorizedPaymentMethods, cardSettingsMap]);
+  }, [categorizedPaymentMethods, cardSettingsMap, allAccountNames]);
 
   // Compute real-time current balance for each bank account (incorporating transactions & card deductions)
   const accountLatestBalances = useMemo(() => {
@@ -327,19 +343,36 @@ export default function BankAccountsPage() {
       const currentAccObj = accounts.find((a) => normalizeName(a.accountName) === normActive);
       const bankNameNorm = currentAccObj?.bankName ? normalizeName(currentAccObj.bankName) : '';
 
+      // Helper to check if a transaction belongs to this bank account
+      const isDirectTx = (tx: TransactionItem) => {
+        if (!tx.date) return false;
+        const pmNorm = normalizeName(tx.paymentMethod);
+        if (pmNorm && creditCardNamesSet.has(pmNorm)) return false;
+
+        if (pmNorm) {
+          const isMatch =
+            pmNorm === normActive ||
+            (bankNameNorm && pmNorm === bankNameNorm) ||
+            pmNorm.includes(normActive) ||
+            normActive.includes(pmNorm) ||
+            (bankNameNorm && (pmNorm.includes(bankNameNorm) || bankNameNorm.includes(pmNorm))) ||
+            tx.paymentMethodType === 'bank_account';
+          if (isMatch) return true;
+        }
+
+        const genericBankTerms = ['口座引き落とし', '銀行引き落とし', '口座振替', '振込', '銀行', '預金', '口座', '給与'];
+        const isGeneric = !pmNorm || genericBankTerms.some((term) => pmNorm.includes(term));
+        if (isGeneric) {
+          const primaryAccount = allAccountNames.length > 0 ? normalizeName(allAccountNames[0]) : '';
+          if (normActive === primaryAccount) return true;
+        }
+
+        return false;
+      };
+
       // Direct transactions for this bank account after snapshotDate
       allTransactions.forEach((tx) => {
-        const pmNorm = normalizeName(tx.paymentMethod);
-        if (!pmNorm) return;
-        if (creditCardNamesSet.has(pmNorm)) return; // exclude card usage
-
-        const isMatch =
-          pmNorm === normActive ||
-          (bankNameNorm && pmNorm === bankNameNorm) ||
-          pmNorm.includes(normActive) ||
-          (bankNameNorm && pmNorm.includes(bankNameNorm));
-
-        if (isMatch && tx.date && tx.date >= snapshotDate) {
+        if (tx.date && tx.date >= snapshotDate && isDirectTx(tx)) {
           const isIncome = tx.type === '収入' || tx.type === 'income';
           const amt = tx.amount || 0;
           if (isIncome) {
@@ -433,19 +466,31 @@ export default function BankAccountsPage() {
 
     // 2. Direct transactions for this bank account (excluding credit card usages)
     const directTx = allTransactions.filter((tx) => {
-      const pmNorm = normalizeName(tx.paymentMethod);
-      if (!pmNorm) return false;
-      if (creditCardNamesSet.has(pmNorm)) return false; // exclude card usage
-
-      const isMatch =
-        pmNorm === normActive ||
-        (bankNameNorm && pmNorm === bankNameNorm) ||
-        pmNorm.includes(normActive) ||
-        (bankNameNorm && pmNorm.includes(bankNameNorm));
-
-      if (!isMatch) return false;
       if (!tx.date) return false;
-      return tx.date >= dateRange.startDate && tx.date <= dateRange.endDate;
+      if (tx.date < dateRange.startDate || tx.date > dateRange.endDate) return false;
+
+      const pmNorm = normalizeName(tx.paymentMethod);
+      if (pmNorm && creditCardNamesSet.has(pmNorm)) return false; // exclude card usage
+
+      if (pmNorm) {
+        const isMatch =
+          pmNorm === normActive ||
+          (bankNameNorm && pmNorm === bankNameNorm) ||
+          pmNorm.includes(normActive) ||
+          normActive.includes(pmNorm) ||
+          (bankNameNorm && (pmNorm.includes(bankNameNorm) || bankNameNorm.includes(pmNorm))) ||
+          tx.paymentMethodType === 'bank_account';
+        if (isMatch) return true;
+      }
+
+      const genericBankTerms = ['口座引き落とし', '銀行引き落とし', '口座振替', '振込', '銀行', '預金', '口座', '給与'];
+      const isGeneric = !pmNorm || genericBankTerms.some((term) => pmNorm.includes(term));
+      if (isGeneric) {
+        const primaryAccount = allAccountNames.length > 0 ? normalizeName(allAccountNames[0]) : '';
+        if (normActive === primaryAccount) return true;
+      }
+
+      return false;
     });
 
     // 3. Generate credit card billing deductions falling in dateRange
