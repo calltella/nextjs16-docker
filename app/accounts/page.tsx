@@ -9,8 +9,12 @@ import {
   addBankBalanceRecord,
   deleteBankBalanceRecord,
   getPaymentMethodsCategorized,
+  getTransactions,
+  getCardSettingsFromDb,
 } from '@/app/dashboard/actions';
 import { normalizeName } from '@/lib/string-utils';
+import { getMonthlyDateRange, formatDateJapanese } from '@/lib/date-utils';
+import { CardSetting, DEFAULT_CARD_SETTING, getBillingCycleForPaymentMonth } from '@/lib/card-settings';
 
 interface BankAccountItem {
   id: number;
@@ -35,6 +39,21 @@ interface PaymentMethodItem {
   id: number;
   name: string;
   type: string; // 'credit_card', 'bank_account', 'cash', 'other'
+}
+
+interface TransactionItem {
+  id: number;
+  date: string;
+  type: string;
+  paymentMethod?: string | null;
+  paymentMethodType?: string | null;
+  parentCategory?: string | null;
+  childCategory?: string | null;
+  amount?: number | null;
+  location?: string | null;
+  memo?: string | null;
+  note?: string | null;
+  tag?: string | null;
 }
 
 const ACCOUNTS_STORAGE_KEY = 'kakeibo_bank_accounts_v1';
@@ -91,12 +110,23 @@ export default function BankAccountsPage() {
   const [dbAccounts, setDbAccounts] = useState<BankAccountItem[]>([]);
   const [dbBalances, setDbBalances] = useState<BankBalanceItem[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodItem[]>([]);
+  const [allTransactions, setAllTransactions] = useState<TransactionItem[]>([]);
+  const [cardSettingsMap, setCardSettingsMap] = useState<Record<string, Omit<CardSetting, 'cardName'>>>({});
 
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const [selectedAccountName, setSelectedAccountName] = useState<string | null>(null);
+
+  // Target Year/Month for 15th-based period
+  const now = new Date();
+  const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState<number>(now.getMonth() + 1);
+
+  const dateRange = useMemo(() => {
+    return getMonthlyDateRange(selectedYear, selectedMonth, 15, true);
+  }, [selectedYear, selectedMonth]);
 
   // New account form state
   const [newAccountName, setNewAccountName] = useState('');
@@ -113,7 +143,13 @@ export default function BankAccountsPage() {
 
   useEffect(() => {
     let ignore = false;
-    Promise.all([getBankAccounts(), getBankBalances(), getPaymentMethodsCategorized()]).then(([accRes, balRes, pmRes]) => {
+    Promise.all([
+      getBankAccounts(),
+      getBankBalances(),
+      getPaymentMethodsCategorized(),
+      getTransactions(),
+      getCardSettingsFromDb(),
+    ]).then(([accRes, balRes, pmRes, txRes, csRes]) => {
       if (!ignore) {
         if (accRes.data) {
           setDbAccounts(accRes.data as BankAccountItem[]);
@@ -123,6 +159,21 @@ export default function BankAccountsPage() {
         }
         if (pmRes.data) {
           setPaymentMethods(pmRes.data as PaymentMethodItem[]);
+        }
+        if (txRes.data) {
+          setAllTransactions(txRes.data as TransactionItem[]);
+        }
+        if (csRes.data) {
+          const map: Record<string, Omit<CardSetting, 'cardName'>> = {};
+          csRes.data.forEach((row) => {
+            map[normalizeName(row.cardName)] = {
+              isCreditCard: row.isCreditCard ?? true,
+              closingDay: row.closingDay,
+              paymentMonthOffset: row.paymentMonthOffset,
+              paymentDay: row.paymentDay,
+            };
+          });
+          setCardSettingsMap(map);
         }
         setLoading(false);
       }
@@ -227,7 +278,146 @@ export default function BankAccountsPage() {
 
   const activeAccount = selectedAccountName || (allAccountNames.length > 0 ? allAccountNames[0] : '');
 
-  // Balance history for active account
+  // Identify credit card names
+  const creditCardNamesSet = useMemo(() => {
+    const set = new Set<string>();
+    categorizedPaymentMethods.creditCards.forEach((c) => set.add(normalizeName(c.name)));
+    Object.keys(cardSettingsMap).forEach((name) => set.add(normalizeName(name)));
+    return set;
+  }, [categorizedPaymentMethods, cardSettingsMap]);
+
+  // Compute monthly log & cumulative balance for active account within dateRange
+  const monthlyAccountData = useMemo(() => {
+    if (!activeAccount) {
+      return { initialBalance: 0, logItems: [] };
+    }
+
+    const normActive = normalizeName(activeAccount);
+
+    // 1. Find latest recorded snapshot balance on or before dateRange.startDate
+    const accountSnapshots = balances
+      .filter((b) => normalizeName(b.accountName) === normActive)
+      .sort((a, b) => a.recordDate.localeCompare(b.recordDate));
+
+    const snapshotPriorOrOnStart = [...accountSnapshots]
+      .reverse()
+      .find((b) => b.recordDate <= dateRange.startDate);
+
+    const initialBalance = snapshotPriorOrOnStart ? snapshotPriorOrOnStart.balance : 0;
+
+    // 2. Direct transactions for this bank account (excluding credit card usages)
+    const directTx = allTransactions.filter((tx) => {
+      const pmNorm = normalizeName(tx.paymentMethod);
+      if (pmNorm !== normActive) return false;
+      if (creditCardNamesSet.has(pmNorm)) return false; // exclude card usage
+      if (!tx.date) return false;
+      return tx.date >= dateRange.startDate && tx.date <= dateRange.endDate;
+    });
+
+    // 3. Generate credit card billing deductions falling in dateRange
+    interface EventItem {
+      id: string | number;
+      date: string;
+      type: string;
+      title: string;
+      category?: string;
+      amount: number;
+      isCcDeduction?: boolean;
+    }
+
+    const events: EventItem[] = [];
+
+    directTx.forEach((tx) => {
+      const isIncome = tx.type === '収入' || tx.type === 'income';
+      const cat = tx.childCategory || tx.parentCategory || '収支';
+      const title = tx.memo || tx.note || tx.location || cat;
+      events.push({
+        id: tx.id,
+        date: tx.date,
+        type: isIncome ? '収入' : '支出',
+        title,
+        category: cat,
+        amount: tx.amount || 0,
+      });
+    });
+
+    // Calculate card deductions for each credit card
+    categorizedPaymentMethods.creditCards.forEach((card) => {
+      const cardName = normalizeName(card.name);
+      const setting = cardSettingsMap[cardName] || DEFAULT_CARD_SETTING;
+
+      // Check payment months in vicinity
+      const checkMonths: string[] = [];
+      const [y, m] = [selectedYear, selectedMonth];
+
+      [-1, 0, 1].forEach((offset) => {
+        const dt = new Date(y, m - 1 + offset, 1);
+        const mStr = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+        checkMonths.push(mStr);
+      });
+
+      checkMonths.forEach((payMonth) => {
+        const cycle = getBillingCycleForPaymentMonth(payMonth, setting);
+        if (cycle.paymentDate >= dateRange.startDate && cycle.paymentDate <= dateRange.endDate) {
+          // Calculate total billed for this cycle
+          const totalBilled = allTransactions.reduce((sum, tx) => {
+            const pm = normalizeName(tx.paymentMethod);
+            if (pm !== cardName) return sum;
+            if (!tx.date) return sum;
+            const isExpense = tx.type === '支出' || tx.type === 'expense';
+            if (isExpense && tx.date >= cycle.billingCycleStart && tx.date <= cycle.billingCycleEnd) {
+              return sum + (tx.amount || 0);
+            }
+            return sum;
+          }, 0);
+
+          if (totalBilled > 0) {
+            const [, pM] = payMonth.split('-');
+            events.push({
+              id: `cc_deduct_${cardName}_${payMonth}`,
+              date: cycle.paymentDate,
+              type: '支出',
+              title: `【カード引き落とし】${cardName} (${parseInt(pM, 10)}月分)`,
+              category: 'カード引き落とし',
+              amount: totalBilled,
+              isCcDeduction: true,
+            });
+          }
+        }
+      });
+    });
+
+    // Sort events chronologically (oldest to newest)
+    events.sort((a, b) => a.date.localeCompare(b.date));
+
+    // Calculate running balance
+    let currentBal = initialBalance;
+    const logItems = events.map((ev) => {
+      if (ev.type === '収入') {
+        currentBal += ev.amount;
+      } else {
+        currentBal -= ev.amount;
+      }
+      return {
+        ...ev,
+        balanceAfter: currentBal,
+      };
+    });
+
+    return { initialBalance, logItems };
+  }, [
+    activeAccount,
+    allTransactions,
+    balances,
+    cardSettingsMap,
+    categorizedPaymentMethods,
+    creditCardNamesSet,
+    dateRange,
+    selectedYear,
+    selectedMonth,
+  ]);
+
+  // Active account recorded balance snapshots
   const activeAccountBalances = useMemo(() => {
     if (!activeAccount) return [];
     const normActive = normalizeName(activeAccount);
@@ -570,115 +760,218 @@ export default function BankAccountsPage() {
           )}
         </div>
 
-        {/* Selected Account Balance History & Record Form */}
+        {/* Selected Account Balance History & Cumulative Log */}
         {activeAccount && (
           <div className="space-y-6">
-            {/* Record New Balance Snapshot Form */}
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm space-y-4">
-              <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-700 pb-3">
-                <h2 className="font-bold text-base flex items-center gap-2">
-                  <span>📝</span> 「{activeAccount}」の残高を随時記録
-                </h2>
-                <span className="text-xs text-gray-400">通帳やアプリの現在残高を入力</span>
+            {/* Monthly Transaction & Balance Progression Section */}
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+              {/* Month Navigation & Period Banner */}
+              <div className="p-5 border-b border-gray-100 dark:border-gray-700 space-y-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div>
+                    <h2 className="text-lg font-bold flex items-center gap-2">
+                      <span>📊</span> 「{activeAccount}」 月別口座出入金 & 累計残高履歴
+                    </h2>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      月初（15日始まり・直前平日調整）基準の期間明細です。カード個別利用は除外し、引き落としのみ反映しています。
+                    </p>
+                  </div>
+
+                  {/* Year/Month Navigation Picker */}
+                  <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-750 p-1.5 rounded-xl border border-gray-200 dark:border-gray-700">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        let y = selectedYear;
+                        let m = selectedMonth - 1;
+                        if (m < 1) {
+                          m = 12;
+                          y -= 1;
+                        }
+                        setSelectedYear(y);
+                        setSelectedMonth(m);
+                      }}
+                      className="px-2.5 py-1 text-xs hover:bg-white dark:hover:bg-gray-700 rounded-lg transition font-bold"
+                    >
+                      ← 前月
+                    </button>
+                    <span className="font-extrabold text-sm text-teal-700 dark:text-teal-300 px-2">
+                      {selectedYear}年{selectedMonth}月期
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        let y = selectedYear;
+                        let m = selectedMonth + 1;
+                        if (m > 12) {
+                          m = 1;
+                          y += 1;
+                        }
+                        setSelectedYear(y);
+                        setSelectedMonth(m);
+                      }}
+                      className="px-2.5 py-1 text-xs hover:bg-white dark:hover:bg-gray-700 rounded-lg transition font-bold"
+                    >
+                      次月 →
+                    </button>
+                  </div>
+                </div>
+
+                {/* Period Range Banner */}
+                <div className="p-4 bg-teal-50 dark:bg-teal-900/30 border border-teal-100 dark:border-teal-800/50 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                  <div className="text-xs">
+                    <span className="font-bold text-teal-800 dark:text-teal-300">集計対象期間 (15日始まり):</span>{' '}
+                    <span className="font-semibold text-gray-700 dark:text-gray-200">
+                      {formatDateJapanese(dateRange.startDate)} 〜 {formatDateJapanese(dateRange.endDate)}
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    期首残高: <span className="font-bold text-teal-700 dark:text-teal-300">¥{monthlyAccountData.initialBalance.toLocaleString()}</span>
+                  </div>
+                </div>
               </div>
 
-              <form onSubmit={handleAddBalanceSubmit} className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-                    記録日 <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={recordDate}
-                    onChange={(e) => setRecordDate(e.target.value)}
-                    required
-                    className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                  />
+              {/* Monthly Account Line Items & Running Balance Table */}
+              <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                <div className="p-4 bg-gray-50 dark:bg-gray-750 text-xs font-bold text-gray-500 dark:text-gray-400 grid grid-cols-12 gap-2 items-center">
+                  <div className="col-span-3 sm:col-span-2">日付</div>
+                  <div className="col-span-5 sm:col-span-6">摘要 / カテゴリ</div>
+                  <div className="col-span-4 sm:col-span-2 text-right">収支額</div>
+                  <div className="col-span-12 sm:col-span-2 text-right">累計残高</div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-                    現在残高 (円) <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    value={balanceAmount}
-                    onChange={(e) => setBalanceAmount(e.target.value)}
-                    placeholder="例: 500000"
-                    required
-                    className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-xs font-bold focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                  />
-                </div>
+                {monthlyAccountData.logItems.length === 0 ? (
+                  <div className="p-8 text-center text-gray-500 text-sm">
+                    この集計期間中（{dateRange.startDate} 〜 {dateRange.endDate}）の口座出入金・引き落とし記録はありません。
+                  </div>
+                ) : (
+                  monthlyAccountData.logItems.map((item) => {
+                    const isIncome = item.type === '収入';
+                    return (
+                      <div
+                        key={item.id}
+                        className={`p-4 text-xs sm:text-sm grid grid-cols-12 gap-2 items-center hover:bg-gray-50 dark:hover:bg-gray-750 transition ${
+                          item.isCcDeduction ? 'bg-purple-50/40 dark:bg-purple-900/10' : ''
+                        }`}
+                      >
+                        <div className="col-span-3 sm:col-span-2 text-gray-600 dark:text-gray-300 font-semibold">
+                          {item.date}
+                        </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
-                    メモ (任意)
-                  </label>
-                  <input
-                    type="text"
-                    value={memo}
-                    onChange={(e) => setMemo(e.target.value)}
-                    placeholder="例: 給与振込後、月末記帳"
-                    className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none"
-                  />
-                </div>
+                        <div className="col-span-5 sm:col-span-6 flex flex-col sm:flex-row sm:items-center gap-1">
+                          <span className="font-bold text-gray-900 dark:text-gray-100">{item.title}</span>
+                          {item.category && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 w-fit">
+                              {item.category}
+                            </span>
+                          )}
+                        </div>
 
-                <div className="flex items-end">
-                  <button
-                    type="submit"
-                    disabled={isPending}
-                    className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition shadow disabled:opacity-50"
-                  >
-                    {isPending ? '保存中...' : '残高記録を保存'}
-                  </button>
-                </div>
-              </form>
+                        <div className="col-span-4 sm:col-span-2 text-right font-bold">
+                          <span className={isIncome ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                            {isIncome ? '+' : '-'}¥{item.amount.toLocaleString()}
+                          </span>
+                        </div>
+
+                        <div className="col-span-12 sm:col-span-2 text-right font-extrabold text-teal-600 dark:text-teal-400 border-t sm:border-t-0 pt-1 sm:pt-0 border-gray-100 dark:border-gray-700">
+                          ¥{item.balanceAfter.toLocaleString()}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
 
-            {/* Balance History Log Table */}
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-              <div className="p-4 bg-gray-50 dark:bg-gray-750 text-xs font-bold text-gray-500 dark:text-gray-400 flex justify-between items-center border-b border-gray-100 dark:border-gray-700">
-                <span>「{activeAccount}」の残高記録履歴 ({activeAccountBalances.length}件)</span>
-                <span>時系列順</span>
+            {/* Record New Balance Snapshot Form & Historical Snapshots */}
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm space-y-6">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-700 pb-3">
+                  <h2 className="font-bold text-base flex items-center gap-2">
+                    <span>📝</span> 「{activeAccount}」の期首・手動残高記録
+                  </h2>
+                  <span className="text-xs text-gray-400">通帳や口座アプリの実際の残高を基準点として入力</span>
+                </div>
+
+                <form onSubmit={handleAddBalanceSubmit} className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+                      記録日 <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={recordDate}
+                      onChange={(e) => setRecordDate(e.target.value)}
+                      required
+                      className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+                      現在残高 (円) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      value={balanceAmount}
+                      onChange={(e) => setBalanceAmount(e.target.value)}
+                      placeholder="例: 500000"
+                      required
+                      className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-xs font-bold focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 dark:text-gray-300 mb-1">
+                      メモ (任意)
+                    </label>
+                    <input
+                      type="text"
+                      value={memo}
+                      onChange={(e) => setMemo(e.target.value)}
+                      placeholder="例: 給与振込後、月末記帳"
+                      className="w-full p-2.5 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-xs focus:ring-2 focus:ring-teal-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="flex items-end">
+                    <button
+                      type="submit"
+                      disabled={isPending}
+                      className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition shadow disabled:opacity-50"
+                    >
+                      {isPending ? '保存中...' : '残高記録を保存'}
+                    </button>
+                  </div>
+                </form>
               </div>
 
-              {activeAccountBalances.length === 0 ? (
-                <div className="p-8 text-center text-gray-500 text-sm">
-                  残高記録がまだありません。上のフォームから現在の口座残高を記録してください。
-                </div>
-              ) : (
-                <div className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {activeAccountBalances.map((item) => (
-                    <div
-                      key={item.id}
-                      className="p-4 sm:px-6 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-750 transition"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs px-2.5 py-1 rounded-full bg-teal-100 dark:bg-teal-900/50 text-teal-700 dark:text-teal-300 font-semibold">
-                          {item.recordDate}
-                        </span>
-                        {item.memo && (
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
-                            {item.memo}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-4">
-                        <span className="font-extrabold text-base sm:text-lg text-teal-600 dark:text-teal-400">
-                          ¥{item.balance.toLocaleString()}
-                        </span>
+              {/* Saved Snapshots list */}
+              {activeAccountBalances.length > 0 && (
+                <div className="pt-4 border-t border-gray-100 dark:border-gray-700 space-y-2">
+                  <div className="text-xs font-bold text-gray-500 dark:text-gray-400">
+                    登録済み手動残高記録 ({activeAccountBalances.length}件)
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {activeAccountBalances.map((b) => (
+                      <div
+                        key={b.id}
+                        className="px-3 py-1.5 bg-gray-50 dark:bg-gray-750 border border-gray-200 dark:border-gray-700 rounded-xl text-xs flex items-center gap-2"
+                      >
+                        <span className="font-semibold text-gray-600 dark:text-gray-300">{b.recordDate}:</span>
+                        <span className="font-extrabold text-teal-600 dark:text-teal-400">¥{b.balance.toLocaleString()}</span>
+                        {b.memo && <span className="text-[10px] text-gray-400">({b.memo})</span>}
                         <button
-                          onClick={() => handleDeleteBalanceRecord(item.id)}
-                          disabled={isPending}
-                          className="text-xs text-gray-400 hover:text-red-600 dark:hover:text-red-400 p-1 rounded transition"
+                          type="button"
+                          onClick={() => handleDeleteBalanceRecord(b.id)}
+                          className="text-[10px] text-gray-400 hover:text-red-500 ml-1 font-bold"
                           title="削除"
                         >
-                          削除
+                          ✕
                         </button>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
