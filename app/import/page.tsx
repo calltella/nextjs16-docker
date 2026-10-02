@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useTransition } from 'react';
+import { useState, useEffect, useTransition, useCallback } from 'react';
 import Navbar from '@/app/components/Navbar';
 import {
   importCsv,
@@ -25,17 +25,29 @@ export default function ImportPage() {
   const [workSummary, setWorkSummary] = useState<WorkSummary | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const loadSummary = async () => {
+  const loadSummary = useCallback(async () => {
     const res = await getWorkTransactionsSummary();
     if (res.data) {
       setWorkSummary(res.data);
     } else {
       setWorkSummary(null);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    loadSummary();
+    let ignore = false;
+    getWorkTransactionsSummary().then((res) => {
+      if (!ignore) {
+        if (res.data) {
+          setWorkSummary(res.data);
+        } else {
+          setWorkSummary(null);
+        }
+      }
+    });
+    return () => {
+      ignore = true;
+    };
   }, []);
 
   const handleImportCsv = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -232,28 +244,28 @@ export default function ImportPage() {
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
                 <div>
-                  <div className="text-gray-500 dark:text-gray-400 font-medium">総収入金額</div>
+                  <div className="text-gray-500 dark:text-gray-400 font-medium font-bold">総収入金額</div>
                   <div className="text-lg font-extrabold text-green-600 dark:text-green-400 mt-0.5">
                     ¥{workSummary.totalIncome.toLocaleString()}
                   </div>
                 </div>
 
                 <div>
-                  <div className="text-gray-500 dark:text-gray-400 font-medium">総支出金額</div>
+                  <div className="text-gray-500 dark:text-gray-400 font-medium font-bold">総支出金額</div>
                   <div className="text-lg font-extrabold text-red-600 dark:text-red-400 mt-0.5">
                     ¥{workSummary.totalExpense.toLocaleString()}
                   </div>
                 </div>
 
                 <div>
-                  <div className="text-gray-500 dark:text-gray-400 font-medium">差引収支</div>
+                  <div className="text-gray-500 dark:text-gray-400 font-medium font-bold">差引収支</div>
                   <div className={`text-lg font-extrabold mt-0.5 ${workSummary.balance >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-600'}`}>
                     ¥{workSummary.balance.toLocaleString()}
                   </div>
                 </div>
 
                 <div>
-                  <div className="text-gray-500 dark:text-gray-400 font-medium">対象期間</div>
+                  <div className="text-gray-500 dark:text-gray-400 font-medium font-bold">対象期間</div>
                   <div className="text-xs font-bold text-gray-700 dark:text-gray-300 mt-1">
                     {workSummary.minDate} 〜 {workSummary.maxDate}
                   </div>

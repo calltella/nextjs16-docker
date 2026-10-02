@@ -59,11 +59,21 @@ async function getOrCreateParentCategoryId(name?: string | null): Promise<number
 async function getOrCreateChildCategoryId(name?: string | null, parentCategoryId?: number | null): Promise<number | null> {
   if (!name || !name.trim()) return null;
   const trimmed = name.trim();
-  const existing = await db.select().from(childCategories).where(eq(childCategories.name, trimmed));
-  if (existing.length > 0) return existing[0].id;
+
+  if (parentCategoryId) {
+    const existing = await db
+      .select()
+      .from(childCategories)
+      .where(and(eq(childCategories.name, trimmed), eq(childCategories.parentCategoryId, parentCategoryId)));
+    if (existing.length > 0) return existing[0].id;
+  } else {
+    const existing = await db.select().from(childCategories).where(eq(childCategories.name, trimmed));
+    if (existing.length > 0) return existing[0].id;
+  }
+
   const inserted = await db
     .insert(childCategories)
-    .values({ name: trimmed, parentCategoryId: parentCategoryId ?? null })
+    .values({ name: trimmed, parentCategoryId: parentCategoryId ?? 1 })
     .returning();
   return inserted[0].id;
 }
@@ -299,6 +309,7 @@ export async function upsertCardSettingInDb(
     }
     const trimmedCardName = cardName.trim();
     const isCreditCard = setting.isCreditCard ?? true;
+    const paymentMethodId = await getOrCreatePaymentMethodId(trimmedCardName);
 
     // Check existing
     const existing = await db
@@ -310,6 +321,7 @@ export async function upsertCardSettingInDb(
       await db
         .update(cardSettings)
         .set({
+          paymentMethodId,
           isCreditCard,
           closingDay: setting.closingDay,
           paymentMonthOffset: setting.paymentMonthOffset,
@@ -319,6 +331,7 @@ export async function upsertCardSettingInDb(
         .where(eq(cardSettings.cardName, trimmedCardName));
     } else {
       await db.insert(cardSettings).values({
+        paymentMethodId,
         cardName: trimmedCardName,
         isCreditCard,
         closingDay: setting.closingDay,
@@ -523,8 +536,10 @@ export async function addBankAccount(accountName: string, bankName?: string, acc
       return { success: false, error: '口座名を入力してください' };
     }
     const userId = await getSafeUserId();
+    const paymentMethodId = await getOrCreatePaymentMethodId(accountName.trim());
 
     const insertValues: typeof bankAccounts.$inferInsert = {
+      paymentMethodId,
       accountName: accountName.trim(),
       bankName: bankName?.trim() || null,
       accountNumber: accountNumber?.trim() || null,
@@ -561,12 +576,24 @@ export async function getBankBalances(accountName?: string) {
   try {
     const userId = await getSafeUserId();
 
-    const query = db.select().from(bankBalances);
+    const query = db
+      .select({
+        id: bankBalances.id,
+        userId: bankBalances.userId,
+        bankAccountId: bankBalances.bankAccountId,
+        accountName: bankAccounts.accountName,
+        recordDate: bankBalances.recordDate,
+        balance: bankBalances.balance,
+        memo: bankBalances.memo,
+        createdAt: bankBalances.createdAt,
+      })
+      .from(bankBalances)
+      .innerJoin(bankAccounts, eq(bankBalances.bankAccountId, bankAccounts.id));
 
     if (accountName) {
       const list = userId
-        ? await query.where(and(eq(bankBalances.userId, userId), eq(bankBalances.accountName, accountName))).orderBy(desc(bankBalances.recordDate), desc(bankBalances.createdAt))
-        : await query.where(eq(bankBalances.accountName, accountName)).orderBy(desc(bankBalances.recordDate), desc(bankBalances.createdAt));
+        ? await query.where(and(eq(bankBalances.userId, userId), eq(bankAccounts.accountName, accountName))).orderBy(desc(bankBalances.recordDate), desc(bankBalances.createdAt))
+        : await query.where(eq(bankAccounts.accountName, accountName)).orderBy(desc(bankBalances.recordDate), desc(bankBalances.createdAt));
       return { data: list, error: null };
     }
 
@@ -593,8 +620,25 @@ export async function addBankBalanceRecord(accountName: string, balance: number,
 
     const userId = await getSafeUserId();
 
+    // Find bankAccountId by accountName or create bankAccount
+    const existingAccounts = await db
+      .select()
+      .from(bankAccounts)
+      .where(eq(bankAccounts.accountName, accountName.trim()));
+
+    let bankAccountId: number;
+    if (existingAccounts.length > 0) {
+      bankAccountId = existingAccounts[0].id;
+    } else {
+      const addRes = await addBankAccount(accountName.trim());
+      if (!addRes.success || !addRes.data) {
+        return { success: false, error: '銀行口座の自動登録に失敗しました' };
+      }
+      bankAccountId = addRes.data.id;
+    }
+
     const insertValues: typeof bankBalances.$inferInsert = {
-      accountName: accountName.trim(),
+      bankAccountId,
       recordDate: recordDate || new Date().toISOString().split('T')[0],
       balance,
       memo: memo?.trim() || null,

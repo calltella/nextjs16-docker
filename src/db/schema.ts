@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, boolean, integer, bigint, date } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, timestamp, boolean, integer, bigint, date, unique } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 // src/db/schema.ts
@@ -30,10 +30,12 @@ export const parentCategories = pgTable('parent_categories', {
 
 export const childCategories = pgTable('child_categories', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
-  parentCategoryId: bigint('parent_category_id', { mode: 'number' }).references(() => parentCategories.id, { onDelete: 'cascade' }),
+  parentCategoryId: bigint('parent_category_id', { mode: 'number' }).notNull().references(() => parentCategories.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  unique('child_cat_parent_name_unique').on(t.parentCategoryId, t.name),
+]);
 
 export const transactions = pgTable('transactions', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
@@ -69,6 +71,7 @@ export const transactionsWork = pgTable('transactions_work', {
 
 export const cardSettings = pgTable('card_settings', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
+  paymentMethodId: bigint('payment_method_id', { mode: 'number' }).references(() => paymentMethods.id, { onDelete: 'cascade' }),
   cardName: text('card_name').notNull().unique(),
   isCreditCard: boolean('is_credit_card').notNull().default(true),
   closingDay: integer('closing_day').notNull().default(15),
@@ -81,6 +84,7 @@ export const cardSettings = pgTable('card_settings', {
 export const bankAccounts = pgTable('bank_accounts', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
   userId: uuid('user_id').notNull().default(sql`auth.uid()`),
+  paymentMethodId: bigint('payment_method_id', { mode: 'number' }).references(() => paymentMethods.id, { onDelete: 'set null' }),
   accountName: text('account_name').notNull(),
   bankName: text('bank_name'),
   accountNumber: text('account_number'),
@@ -91,8 +95,7 @@ export const bankAccounts = pgTable('bank_accounts', {
 export const bankBalances = pgTable('bank_balances', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
   userId: uuid('user_id').notNull().default(sql`auth.uid()`),
-  bankAccountId: bigint('bank_account_id', { mode: 'number' }).references(() => bankAccounts.id, { onDelete: 'cascade' }),
-  accountName: text('account_name').notNull(),
+  bankAccountId: bigint('bank_account_id', { mode: 'number' }).notNull().references(() => bankAccounts.id, { onDelete: 'cascade' }),
   recordDate: date('record_date').notNull(),
   balance: integer('balance').notNull(),
   memo: text('memo'),
