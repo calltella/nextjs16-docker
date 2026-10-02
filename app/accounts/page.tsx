@@ -283,26 +283,6 @@ export default function BankAccountsPage() {
     };
   }, [paymentMethods]);
 
-  // Compute latest balance for each account
-  const accountLatestBalances = useMemo(() => {
-    const map: Record<string, { latestBalance: number; latestDate: string }> = {};
-
-    balances.forEach((item) => {
-      const normName = normalizeName(item.accountName);
-      if (
-        !map[normName] ||
-        item.recordDate > map[normName].latestDate
-      ) {
-        map[normName] = {
-          latestBalance: item.balance,
-          latestDate: item.recordDate,
-        };
-      }
-    });
-
-    return map;
-  }, [balances]);
-
   // Combined accounts list (from bank_accounts or balance records or payment_methods of type bank_account or linked bank accounts)
   const allAccountNames = useMemo(() => {
     const namesSet = new Set<string>();
@@ -327,6 +307,107 @@ export default function BankAccountsPage() {
     return set;
   }, [categorizedPaymentMethods, cardSettingsMap]);
 
+  // Compute real-time current balance for each bank account (incorporating transactions & card deductions)
+  const accountLatestBalances = useMemo(() => {
+    const map: Record<string, { latestBalance: number; latestDate: string }> = {};
+
+    allAccountNames.forEach((accName) => {
+      const normActive = normalizeName(accName);
+
+      // Find latest recorded snapshot balance
+      const accountSnapshots = balances
+        .filter((b) => normalizeName(b.accountName) === normActive)
+        .sort((a, b) => a.recordDate.localeCompare(b.recordDate));
+
+      const latestSnapshot = accountSnapshots.length > 0 ? accountSnapshots[accountSnapshots.length - 1] : null;
+      const snapshotDate = latestSnapshot ? latestSnapshot.recordDate : '1970-01-01';
+      let currentBal = latestSnapshot ? latestSnapshot.balance : 0;
+      let maxDate = latestSnapshot ? latestSnapshot.recordDate : '';
+
+      const currentAccObj = accounts.find((a) => normalizeName(a.accountName) === normActive);
+      const bankNameNorm = currentAccObj?.bankName ? normalizeName(currentAccObj.bankName) : '';
+
+      // Direct transactions for this bank account after snapshotDate
+      allTransactions.forEach((tx) => {
+        const pmNorm = normalizeName(tx.paymentMethod);
+        if (!pmNorm) return;
+        if (creditCardNamesSet.has(pmNorm)) return; // exclude card usage
+
+        const isMatch =
+          pmNorm === normActive ||
+          (bankNameNorm && pmNorm === bankNameNorm) ||
+          pmNorm.includes(normActive) ||
+          (bankNameNorm && pmNorm.includes(bankNameNorm));
+
+        if (isMatch && tx.date && tx.date >= snapshotDate) {
+          const isIncome = tx.type === '収入' || tx.type === 'income';
+          const amt = tx.amount || 0;
+          if (isIncome) {
+            currentBal += amt;
+          } else {
+            currentBal -= amt;
+          }
+          if (tx.date > maxDate) maxDate = tx.date;
+        }
+      });
+
+      // Credit card billing deductions after snapshotDate
+      categorizedPaymentMethods.creditCards.forEach((card) => {
+        const cardName = normalizeName(card.name);
+        const setting = cardSettingsMap[cardName] || DEFAULT_CARD_SETTING;
+
+        const linkedAccount = setting.linkedBankAccount ? normalizeName(setting.linkedBankAccount) : '';
+        const targetAccount = linkedAccount || (allAccountNames.length > 0 ? normalizeName(allAccountNames[0]) : '');
+
+        if (targetAccount === normActive) {
+          const curY = selectedYear;
+          const curM = selectedMonth;
+
+          for (let offset = -12; offset <= 3; offset++) {
+            const dt = new Date(curY, curM - 1 + offset, 1);
+            const payMonth = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+            const cycle = getBillingCycleForPaymentMonth(payMonth, setting);
+
+            if (cycle.paymentDate && cycle.paymentDate >= snapshotDate) {
+              const totalBilled = allTransactions.reduce((sum, tx) => {
+                const pm = normalizeName(tx.paymentMethod);
+                if (pm !== cardName) return sum;
+                if (!tx.date) return sum;
+                const isExpense = tx.type === '支出' || tx.type === 'expense';
+                if (isExpense && tx.date >= cycle.billingCycleStart && tx.date <= cycle.billingCycleEnd) {
+                  return sum + (tx.amount || 0);
+                }
+                return sum;
+              }, 0);
+
+              if (totalBilled > 0) {
+                currentBal -= totalBilled;
+                if (cycle.paymentDate > maxDate) maxDate = cycle.paymentDate;
+              }
+            }
+          }
+        }
+      });
+
+      map[normActive] = {
+        latestBalance: currentBal,
+        latestDate: maxDate || '未記録',
+      };
+    });
+
+    return map;
+  }, [
+    allAccountNames,
+    accounts,
+    allTransactions,
+    balances,
+    cardSettingsMap,
+    categorizedPaymentMethods,
+    creditCardNamesSet,
+    selectedYear,
+    selectedMonth,
+  ]);
+
   // Compute monthly log & cumulative balance for active account within dateRange
   const monthlyAccountData = useMemo(() => {
     if (!activeAccount) {
@@ -346,11 +427,23 @@ export default function BankAccountsPage() {
 
     const initialBalance = snapshotPriorOrOnStart ? snapshotPriorOrOnStart.balance : 0;
 
+    // Find matching account item to check bankName
+    const currentAccObj = accounts.find((a) => normalizeName(a.accountName) === normActive);
+    const bankNameNorm = currentAccObj?.bankName ? normalizeName(currentAccObj.bankName) : '';
+
     // 2. Direct transactions for this bank account (excluding credit card usages)
     const directTx = allTransactions.filter((tx) => {
       const pmNorm = normalizeName(tx.paymentMethod);
-      if (pmNorm !== normActive) return false;
+      if (!pmNorm) return false;
       if (creditCardNamesSet.has(pmNorm)) return false; // exclude card usage
+
+      const isMatch =
+        pmNorm === normActive ||
+        (bankNameNorm && pmNorm === bankNameNorm) ||
+        pmNorm.includes(normActive) ||
+        (bankNameNorm && pmNorm.includes(bankNameNorm));
+
+      if (!isMatch) return false;
       if (!tx.date) return false;
       return tx.date >= dateRange.startDate && tx.date <= dateRange.endDate;
     });
@@ -458,6 +551,7 @@ export default function BankAccountsPage() {
     return { initialBalance, logItems };
   }, [
     activeAccount,
+    accounts,
     allAccountNames,
     allTransactions,
     balances,
