@@ -344,6 +344,16 @@ export default function BankAccountsPage() {
     return set;
   }, [categorizedPaymentMethods, cardSettingsMap, pmNameToIdMap]);
 
+  // Set of all paymentMethod.id that belong to bank accounts
+  const bankAccountPaymentMethodIdsSet = useMemo(() => {
+    const set = new Set<number>();
+    categorizedPaymentMethods.bankAccountsList.forEach((b) => set.add(b.id));
+    accounts.forEach((acc) => {
+      if (acc.paymentMethodId) set.add(acc.paymentMethodId);
+    });
+    return set;
+  }, [categorizedPaymentMethods, accounts]);
+
   // Compute real-time current balance for each bank account (incorporating transactions & card deductions)
   const accountLatestBalances = useMemo(() => {
     const map: Record<string, { latestBalance: number; latestDate: string }> = {};
@@ -383,15 +393,36 @@ export default function BankAccountsPage() {
           return true;
         }
 
-        // 2. Fallback match by name
+        // 2. Direct match if tx.paymentMethodType === 'bank_account' or tx.paymentMethodId is in bankAccountPaymentMethodIdsSet
+        const isBankAccountType =
+          tx.paymentMethodType === 'bank_account' ||
+          (tx.paymentMethodId && bankAccountPaymentMethodIdsSet.has(tx.paymentMethodId));
+
+        if (isBankAccountType) {
+          if (
+            pmNorm === normActive ||
+            (bankNameNorm && pmNorm === bankNameNorm) ||
+            pmNorm.includes(normActive) ||
+            normActive.includes(pmNorm) ||
+            (bankNameNorm && (pmNorm.includes(bankNameNorm) || bankNameNorm.includes(pmNorm)))
+          ) {
+            return true;
+          }
+
+          const primaryAccount = allAccountNames.length > 0 ? normalizeName(allAccountNames[0]) : '';
+          if (normActive === primaryAccount) {
+            return true;
+          }
+        }
+
+        // 3. Fallback match by name
         if (pmNorm) {
           const isMatch =
             pmNorm === normActive ||
             (bankNameNorm && pmNorm === bankNameNorm) ||
             pmNorm.includes(normActive) ||
             normActive.includes(pmNorm) ||
-            (bankNameNorm && (pmNorm.includes(bankNameNorm) || bankNameNorm.includes(pmNorm))) ||
-            tx.paymentMethodType === 'bank_account';
+            (bankNameNorm && (pmNorm.includes(bankNameNorm) || bankNameNorm.includes(pmNorm)));
           if (isMatch) return true;
         }
 
@@ -473,6 +504,7 @@ export default function BankAccountsPage() {
     categorizedPaymentMethods,
     creditCardNamesSet,
     creditCardPaymentMethodIdsSet,
+    bankAccountPaymentMethodIdsSet,
     pmNameToIdMap,
     selectedYear,
     selectedMonth,
@@ -521,15 +553,36 @@ export default function BankAccountsPage() {
         return true;
       }
 
-      // 2. Fallback match by name
+      // 2. Direct match if tx.paymentMethodType === 'bank_account' or tx.paymentMethodId is in bankAccountPaymentMethodIdsSet
+      const isBankAccountType =
+        tx.paymentMethodType === 'bank_account' ||
+        (tx.paymentMethodId && bankAccountPaymentMethodIdsSet.has(tx.paymentMethodId));
+
+      if (isBankAccountType) {
+        if (
+          pmNorm === normActive ||
+          (bankNameNorm && pmNorm === bankNameNorm) ||
+          pmNorm.includes(normActive) ||
+          normActive.includes(pmNorm) ||
+          (bankNameNorm && (pmNorm.includes(bankNameNorm) || bankNameNorm.includes(pmNorm)))
+        ) {
+          return true;
+        }
+
+        const primaryAccount = allAccountNames.length > 0 ? normalizeName(allAccountNames[0]) : '';
+        if (normActive === primaryAccount) {
+          return true;
+        }
+      }
+
+      // 3. Fallback match by name
       if (pmNorm) {
         const isMatch =
           pmNorm === normActive ||
           (bankNameNorm && pmNorm === bankNameNorm) ||
           pmNorm.includes(normActive) ||
           normActive.includes(pmNorm) ||
-          (bankNameNorm && (pmNorm.includes(bankNameNorm) || bankNameNorm.includes(pmNorm))) ||
-          tx.paymentMethodType === 'bank_account';
+          (bankNameNorm && (pmNorm.includes(bankNameNorm) || bankNameNorm.includes(pmNorm)));
         if (isMatch) return true;
       }
 
@@ -654,6 +707,7 @@ export default function BankAccountsPage() {
     categorizedPaymentMethods,
     creditCardNamesSet,
     creditCardPaymentMethodIdsSet,
+    bankAccountPaymentMethodIdsSet,
     pmNameToIdMap,
     dateRange,
     selectedYear,
