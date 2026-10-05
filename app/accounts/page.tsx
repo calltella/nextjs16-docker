@@ -393,6 +393,23 @@ export default function BankAccountsPage() {
           return true;
         }
 
+        // Check if tx.paymentMethodId is mapped to another specific bank account
+        const isMappedToOther = allAccountNames.some((otherAccName) => {
+          const normOther = normalizeName(otherAccName);
+          if (normOther === normActive) return false;
+          const otherAccObj = accounts.find((a) => normalizeName(a.accountName) === normOther);
+          const otherBankNameNorm = otherAccObj?.bankName ? normalizeName(otherAccObj.bankName) : '';
+          const otherPmId =
+            otherAccObj?.paymentMethodId ||
+            pmNameToIdMap.get(normOther) ||
+            (otherBankNameNorm ? pmNameToIdMap.get(otherBankNameNorm) : undefined);
+          return otherPmId && tx.paymentMethodId === otherPmId;
+        });
+
+        if (isMappedToOther) {
+          return false;
+        }
+
         // 2. Direct match if tx.paymentMethodType === 'bank_account' or tx.paymentMethodId is in bankAccountPaymentMethodIdsSet
         const isBankAccountType =
           tx.paymentMethodType === 'bank_account' ||
@@ -551,6 +568,23 @@ export default function BankAccountsPage() {
       // 1. Direct match by transactions.payment_method_id
       if (tx.paymentMethodId && targetPaymentMethodId && tx.paymentMethodId === targetPaymentMethodId) {
         return true;
+      }
+
+      // Check if tx.paymentMethodId is mapped to another specific bank account
+      const isMappedToOther = allAccountNames.some((otherAccName) => {
+        const normOther = normalizeName(otherAccName);
+        if (normOther === normActive) return false;
+        const otherAccObj = accounts.find((a) => normalizeName(a.accountName) === normOther);
+        const otherBankNameNorm = otherAccObj?.bankName ? normalizeName(otherAccObj.bankName) : '';
+        const otherPmId =
+          otherAccObj?.paymentMethodId ||
+          pmNameToIdMap.get(normOther) ||
+          (otherBankNameNorm ? pmNameToIdMap.get(otherBankNameNorm) : undefined);
+        return otherPmId && tx.paymentMethodId === otherPmId;
+      });
+
+      if (isMappedToOther) {
+        return false;
       }
 
       // 2. Direct match if tx.paymentMethodType === 'bank_account' or tx.paymentMethodId is in bankAccountPaymentMethodIdsSet
