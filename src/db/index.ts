@@ -10,6 +10,10 @@ let _db: PostgresJsDatabase<typeof schema> | null = null;
 export function getDb(): PostgresJsDatabase<typeof schema> {
   if (!_db) {
     const databaseUrl = process.env.DATABASE_URL;
+    console.log(
+      'DATABASE_URL exists:',
+      !!databaseUrl
+    );
     if (!databaseUrl) {
       throw new Error('DATABASE_URL environment variable is not set.');
     }
