@@ -15,6 +15,8 @@ export function formatDate(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+const JAPANESE_DAYS = ['日', '月', '火', '水', '木', '金', '土'];
+
 /**
  * Formats YYYY-MM-DD date string to Japanese format (e.g., "2026年3月25日").
  */
@@ -26,6 +28,21 @@ export function formatDateJapanese(dateStr: string): string {
   const month = parseInt(parts[1], 10);
   const day = parseInt(parts[2], 10);
   return `${year}年${month}月${day}日`;
+}
+
+/**
+ * Formats YYYY-MM-DD date string to include Japanese day of week (e.g., "2026-03-16 (月)").
+ */
+export function formatDateWithDayOfWeek(dateStr: string): string {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length !== 3) return dateStr;
+  const y = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  const d = parseInt(parts[2], 10);
+  const date = new Date(y, m - 1, d);
+  const dayOfWeekStr = JAPANESE_DAYS[date.getDay()];
+  return `${dateStr} (${dayOfWeekStr})`;
 }
 
 /**
@@ -101,50 +118,33 @@ export function isHolidayOrWeekend(year: number, month: number, day: number): bo
 }
 
 /**
- * Finds the nearest weekday (non-weekend, non-holiday) for a given target date (year, month, day).
- * Searches around the target date in order of distance (0, -1, +1, -2, +2, -3, +3...).
+ * Finds the preceding weekday (直前の平日) for a given target date (year, month, day).
+ * If the date falls on a Saturday, Sunday, or Japanese holiday, steps backward until finding a weekday.
  */
-export function getNearestWeekday(year: number, month: number, day: number): Date {
-  const baseDate = new Date(year, month - 1, day);
-
-  if (!isHolidayOrWeekend(baseDate.getFullYear(), baseDate.getMonth() + 1, baseDate.getDate())) {
-    return baseDate;
+export function getPrecedingWeekday(year: number, month: number, day: number): Date {
+  const date = new Date(year, month - 1, day);
+  while (isHolidayOrWeekend(date.getFullYear(), date.getMonth() + 1, date.getDate())) {
+    date.setDate(date.getDate() - 1);
   }
+  return date;
+}
 
-  // Search expanding distance: -1, +1, -2, +2, -3, +3...
-  for (let offset = 1; offset <= 10; offset++) {
-    // Check earlier date (-offset) first
-    const prevCandidate = new Date(year, month - 1, day - offset);
-    if (
-      !isHolidayOrWeekend(
-        prevCandidate.getFullYear(),
-        prevCandidate.getMonth() + 1,
-        prevCandidate.getDate()
-      )
-    ) {
-      return prevCandidate;
-    }
-
-    // Check later date (+offset)
-    const nextCandidate = new Date(year, month - 1, day + offset);
-    if (
-      !isHolidayOrWeekend(
-        nextCandidate.getFullYear(),
-        nextCandidate.getMonth() + 1,
-        nextCandidate.getDate()
-      )
-    ) {
-      return nextCandidate;
-    }
+/**
+ * Finds the next business day (翌営業日) for a given target date (year, month, day).
+ * If the date falls on a Saturday, Sunday, or Japanese holiday, steps forward until finding a business day.
+ */
+export function getNextBusinessDay(year: number, month: number, day: number): Date {
+  const date = new Date(year, month - 1, day);
+  while (isHolidayOrWeekend(date.getFullYear(), date.getMonth() + 1, date.getDate())) {
+    date.setDate(date.getDate() + 1);
   }
-
-  return baseDate;
+  return date;
 }
 
 /**
  * Calculates start and end dates for a target year/month given a month start setting.
- * - If adjustNearestWeekday is true: computes start date as nearest weekday to 15th of previous month,
- *   and end date as the day before nearest weekday to 15th of target month.
+ * - If adjustPrecedingWeekday is true: computes start date as preceding weekday to 15th of previous month,
+ *   and end date as the day before preceding weekday to 15th of target month.
  * - If startDay is 1: range is YYYY-MM-01 to YYYY-MM-(lastDay).
  * - If startDay > 1: range is (prevYear)-(prevMonth)-(startDay) to (targetYear)-(targetMonth)-(startDay - 1).
  */
@@ -152,9 +152,9 @@ export function getMonthlyDateRange(
   year: number,
   month: number,
   startDay: number = 1,
-  adjustNearestWeekday: boolean = false
+  adjustPrecedingWeekday: boolean = false
 ): { startDate: string; endDate: string } {
-  if (adjustNearestWeekday) {
+  if (adjustPrecedingWeekday) {
     // Previous month 15th
     let prevYear = year;
     let prevMonth = month - 1;
@@ -163,16 +163,16 @@ export function getMonthlyDateRange(
       prevYear = year - 1;
     }
 
-    const prevStartNearest = getNearestWeekday(prevYear, prevMonth, 15);
-    const currStartNearest = getNearestWeekday(year, month, 15);
+    const prevStartPreceding = getPrecedingWeekday(prevYear, prevMonth, 15);
+    const currStartPreceding = getPrecedingWeekday(year, month, 15);
 
-    // End date is day before currStartNearest
-    const currEndNearest = new Date(currStartNearest);
-    currEndNearest.setDate(currEndNearest.getDate() - 1);
+    // End date is day before currStartPreceding
+    const currEndPreceding = new Date(currStartPreceding);
+    currEndPreceding.setDate(currEndPreceding.getDate() - 1);
 
     return {
-      startDate: formatDate(prevStartNearest),
-      endDate: formatDate(currEndNearest),
+      startDate: formatDate(prevStartPreceding),
+      endDate: formatDate(currEndPreceding),
     };
   }
 

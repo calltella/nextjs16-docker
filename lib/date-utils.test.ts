@@ -2,10 +2,11 @@ import {
   getDaysInMonth,
   formatDate,
   formatDateJapanese,
+  formatDateWithDayOfWeek,
   getMonthlyDateRange,
   isJapaneseHoliday,
   isHolidayOrWeekend,
-  getNearestWeekday,
+  getPrecedingWeekday,
 } from './date-utils';
 
 function assertEqual<T>(actual: T, expected: T, message: string) {
@@ -25,6 +26,10 @@ assertEqual(formatDate(new Date(2026, 2, 15)), '2026-03-15', 'Format date');
 // Test formatDateJapanese
 assertEqual(formatDateJapanese('2026-03-25'), '2026年3月25日', 'Format date JP');
 
+// Test formatDateWithDayOfWeek
+assertEqual(formatDateWithDayOfWeek('2026-03-16'), '2026-03-16 (月)', 'Format date with day of week (Mon)');
+assertEqual(formatDateWithDayOfWeek('2026-03-15'), '2026-03-15 (日)', 'Format date with day of week (Sun)');
+
 // Test isJapaneseHoliday
 assertEqual(isJapaneseHoliday(2026, 1, 1), true, 'Jan 1 is 元日');
 assertEqual(isJapaneseHoliday(2026, 2, 11), true, 'Feb 11 is 建国記念の日');
@@ -35,26 +40,25 @@ assertEqual(isHolidayOrWeekend(2026, 3, 14), true, 'March 14, 2026 is Saturday')
 assertEqual(isHolidayOrWeekend(2026, 3, 15), true, 'March 15, 2026 is Sunday');
 assertEqual(isHolidayOrWeekend(2026, 3, 16), false, 'March 16, 2026 is Monday');
 
-// Test getNearestWeekday
-// March 15, 2026 is Sunday. Nearest weekday is Monday, March 16.
-const nearestForMar15 = getNearestWeekday(2026, 3, 15);
-assertEqual(formatDate(nearestForMar15), '2026-03-16', 'March 15, 2026 (Sun) -> nearest weekday March 16 (Mon)');
+// Test getPrecedingWeekday
+// March 15, 2026 is Sunday. Preceding weekday (直前の平日) is Friday, March 13.
+const precedingForMar15 = getPrecedingWeekday(2026, 3, 15);
+assertEqual(formatDate(precedingForMar15), '2026-03-13', 'March 15, 2026 (Sun) -> preceding weekday March 13 (Fri)');
 
-// February 15, 2026 is Sunday -> nearest weekday Feb 16 (Mon)
-const nearestForFeb15 = getNearestWeekday(2026, 2, 15);
-assertEqual(formatDate(nearestForFeb15), '2026-02-16', 'Feb 15, 2026 (Sun) -> nearest weekday Feb 16 (Mon)');
+// February 15, 2026 is Sunday -> preceding weekday Feb 13 (Fri)
+const precedingForFeb15 = getPrecedingWeekday(2026, 2, 15);
+assertEqual(formatDate(precedingForFeb15), '2026-02-13', 'Feb 15, 2026 (Sun) -> preceding weekday Feb 13 (Fri)');
 
-// August 15, 2026 is Saturday. Friday Aug 14 is 1 day away (-1), Monday Aug 17 is 2 days away (+2).
-// Nearest weekday is Friday, Aug 14.
-const nearestForAug15 = getNearestWeekday(2026, 8, 15);
-assertEqual(formatDate(nearestForAug15), '2026-08-14', 'Aug 15, 2026 (Sat) -> nearest weekday Aug 14 (Fri)');
+// August 15, 2026 is Saturday -> preceding weekday Aug 14 (Fri)
+const precedingForAug15 = getPrecedingWeekday(2026, 8, 15);
+assertEqual(formatDate(precedingForAug15), '2026-08-14', 'Aug 15, 2026 (Sat) -> preceding weekday Aug 14 (Fri)');
 
-// Test getMonthlyDateRange - adjustNearestWeekday = true
+// Test getMonthlyDateRange - adjustPrecedingWeekday = true
 // For March 2026:
-// Prev month start (Feb 15, 2026 Sun) -> Feb 16, 2026 (Mon)
-// Curr month start (Mar 15, 2026 Sun) -> Mar 16, 2026 (Mon) -> Day before is Mar 15, 2026
-const rangeNearest15 = getMonthlyDateRange(2026, 3, 15, true);
-assertEqual(rangeNearest15.startDate, '2026-02-16', 'March 2026 nearestWeekday=true startDate');
-assertEqual(rangeNearest15.endDate, '2026-03-15', 'March 2026 nearestWeekday=true endDate');
+// Prev month start (Feb 15, 2026 Sun) -> preceding weekday Feb 13, 2026 (Fri)
+// Curr month start (Mar 15, 2026 Sun) -> preceding weekday Mar 13, 2026 (Fri) -> Day before is Mar 12, 2026 (Thu)
+const rangePreceding15 = getMonthlyDateRange(2026, 3, 15, true);
+assertEqual(rangePreceding15.startDate, '2026-02-13', 'March 2026 adjustPrecedingWeekday=true startDate');
+assertEqual(rangePreceding15.endDate, '2026-03-12', 'March 2026 adjustPrecedingWeekday=true endDate');
 
 console.log('All date-utils unit tests passed successfully!');
