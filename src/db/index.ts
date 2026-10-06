@@ -17,11 +17,10 @@ export function getDb(): PostgresJsDatabase<typeof schema> {
     if (!databaseUrl) {
       throw new Error('DATABASE_URL environment variable is not set.');
     }
-    // port 6543 = Supavisor Transaction mode。prepared statement非対応なので必須
-    //const client = postgres(databaseUrl, { prepare: false });
+
     const client = postgres(databaseUrl, {
       prepare: false,
-      ssl: 'require',
+      ssl: process.env.DATABASE_SSL === 'true' ? 'require' : false,
     });
     _db = drizzle({ client, schema });
   }
