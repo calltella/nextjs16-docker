@@ -70,6 +70,15 @@ export const transactionsWork = pgTable('transactions_work', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const cardTypes = pgTable('card_types', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id'),
+  name: text('name').notNull(),
+  paymentMethod: text('payment_method'),
+  note: text('note'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const cardSettings = pgTable('card_settings', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
   paymentMethodId: bigint('payment_method_id', { mode: 'number' }).references(() => paymentMethods.id, { onDelete: 'cascade' }),

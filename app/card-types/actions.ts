@@ -1,7 +1,7 @@
 'use server';
 
 import { db } from '@/src/db';
-import { cardTypes, transactionsWork, transactions } from '@/src/db/schema';
+import { cardTypes, transactionsWork, paymentMethods } from '@/src/db/schema';
 import { eq, desc } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { getAuthUser } from '@/lib/supabase/server';
@@ -169,16 +169,16 @@ export async function syncCardTypesFromTransactions() {
           .where(eq(transactionsWork.userId, user.id));
 
         mainList = await db
-          .select({ paymentMethod: transactions.paymentMethod })
-          .from(transactions);
+          .select({ paymentMethod: paymentMethods.name })
+          .from(paymentMethods);
       } else {
         workList = await db
           .select({ paymentMethod: transactionsWork.paymentMethod })
           .from(transactionsWork);
 
         mainList = await db
-          .select({ paymentMethod: transactions.paymentMethod })
-          .from(transactions);
+          .select({ paymentMethod: paymentMethods.name })
+          .from(paymentMethods);
       }
     } catch {
       // DB not available
