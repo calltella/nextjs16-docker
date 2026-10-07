@@ -35,3 +35,6 @@ jobs:
 
       - name: Build application
         run: npm run build
+
+      - name: Build Cloudflare Workers bundle
+        run: npm run build:cf
