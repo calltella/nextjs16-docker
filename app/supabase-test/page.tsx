@@ -79,7 +79,7 @@ export default function SupabaseTestPage() {
     }
   }, []);
 
-  const testDbWrite = useCallback(async () => {
+  const testDbWrite = useCallback(async (): Promise<number | string | null> => {
     setWriteStatus('testing');
     setWriteDetails('');
     try {
@@ -100,6 +100,7 @@ export default function SupabaseTestPage() {
       if (error) {
         setWriteStatus('error');
         setWriteDetails(`書き込みエラー: ${error.message} (${error.code || 'NO_CODE'})`);
+        return null;
       } else if (data && data.length > 0) {
         const insertedId = data[0].id;
         setLastInsertedId(insertedId);
@@ -109,22 +110,25 @@ export default function SupabaseTestPage() {
           `作成レコードID: ${insertedId}\n` +
           `データ内容: 日付=${testRecord.date}, 種別=${testRecord.type}, メモ=${testRecord.memo}`
         );
+        return insertedId;
       } else {
         setWriteStatus('success');
         setWriteDetails('書き込み成功: テストレコードが正常に挿入されました');
+        return null;
       }
     } catch (err: unknown) {
       setWriteStatus('error');
       setWriteDetails(err instanceof Error ? err.message : '書き込みテスト中に不明なエラーが発生しました');
+      return null;
     }
   }, []);
 
-  const testDbDelete = useCallback(async () => {
+  const testDbDelete = useCallback(async (explicitTargetId?: number | string | null) => {
     setDeleteStatus('testing');
     setDeleteDetails('');
     try {
       const supabase = createClient();
-      let targetId = lastInsertedId;
+      let targetId = explicitTargetId ?? lastInsertedId;
 
       // 削除対象IDが存在しない場合は一時レコードを作成して削除テストを実行
       if (!targetId) {
@@ -175,11 +179,15 @@ export default function SupabaseTestPage() {
     }
   }, [lastInsertedId]);
 
+  const handleSingleDelete = useCallback(() => {
+    testDbDelete();
+  }, [testDbDelete]);
+
   const runAllTests = useCallback(async () => {
     await testClientConnection();
     await testDbRead();
-    await testDbWrite();
-    await testDbDelete();
+    const createdId = await testDbWrite();
+    await testDbDelete(createdId);
   }, [testClientConnection, testDbRead, testDbWrite, testDbDelete]);
 
   useEffect(() => {
@@ -411,7 +419,7 @@ export default function SupabaseTestPage() {
                 <span className="text-sm font-semibold text-slate-200">✍️ データベース書き込みテスト</span>
               </div>
               <button
-                onClick={testDbWrite}
+                onClick={() => { testDbWrite(); }}
                 disabled={writeStatus === 'testing'}
                 className="text-xs bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium px-3 py-1.5 rounded-lg transition shadow-sm"
               >
@@ -463,7 +471,7 @@ export default function SupabaseTestPage() {
                 <span className="text-sm font-semibold text-slate-200">🗑️ データベース削除テスト</span>
               </div>
               <button
-                onClick={testDbDelete}
+                onClick={handleSingleDelete}
                 disabled={deleteStatus === 'testing'}
                 className="text-xs bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium px-3 py-1.5 rounded-lg transition shadow-sm"
               >
