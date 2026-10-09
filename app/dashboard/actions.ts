@@ -603,7 +603,7 @@ export async function upsertCardSettingInDb(
 
 export async function importCsv(formData: FormData) {
   try {
-    await ensureTransactionsWorkTableExists();
+    //await ensureTransactionsWorkTableExists();
     const userId = await getSafeUserId();
 
     const file = formData.get('file') as File | null;
@@ -617,6 +617,7 @@ export async function importCsv(formData: FormData) {
     if (rows.length === 0) {
       return { success: false, error: '有効なデータが見つかりませんでした' };
     }
+    console.log('userId:', userId);
 
     // Clear existing records in transactionsWork
     if (userId) {
