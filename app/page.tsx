@@ -1,15 +1,15 @@
-import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { createClient } from '@/utils/supabase/server'
-import { useRouter } from 'next/navigation';
-import { cookies } from 'next/headers'
+'use client';
 
-export default async function Home() {
+import { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
+import { createClient } from '@/lib/supabase/client';
+import { useRouter } from 'next/navigation';
+
+export default function Home() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
-  const cookieStore = await cookies()
-  const supabase = createClient(cookieStore)
+  const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
 
   useEffect(() => {
