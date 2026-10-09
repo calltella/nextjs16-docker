@@ -262,12 +262,55 @@ export async function saveWorkToNormalizedTransactions() {
       return { success: false, count: 0, error: 'transactions_work に分析・保存対象のデータが存在しません' };
     }
 
-    let insertedCount = 0;
+    // Pre-cache lookup maps to eliminate hundreds of sequential DB queries
+    const typeCache = new Map<string, number>();
+    const pmCache = new Map<string, number>();
+    const parentCatCache = new Map<string, number>();
+    const childCatCache = new Map<string, number>();
+
+    const getCachedTypeId = async (name?: string | null) => {
+      if (!name || !name.trim()) return null;
+      const key = name.trim();
+      if (typeCache.has(key)) return typeCache.get(key)!;
+      const id = await getOrCreateTypeId(key);
+      if (id !== null) typeCache.set(key, id);
+      return id;
+    };
+
+    const getCachedPmId = async (name?: string | null) => {
+      const normalized = normalizeName(name);
+      if (!normalized) return null;
+      if (pmCache.has(normalized)) return pmCache.get(normalized)!;
+      const id = await getOrCreatePaymentMethodId(normalized);
+      if (id !== null) pmCache.set(normalized, id);
+      return id;
+    };
+
+    const getCachedParentCatId = async (name?: string | null) => {
+      if (!name || !name.trim()) return null;
+      const key = name.trim();
+      if (parentCatCache.has(key)) return parentCatCache.get(key)!;
+      const id = await getOrCreateParentCategoryId(key);
+      if (id !== null) parentCatCache.set(key, id);
+      return id;
+    };
+
+    const getCachedChildCatId = async (name?: string | null, parentId?: number | null) => {
+      if (!name || !name.trim()) return null;
+      const key = `${parentId ?? 1}:${name.trim()}`;
+      if (childCatCache.has(key)) return childCatCache.get(key)!;
+      const id = await getOrCreateChildCategoryId(name.trim(), parentId);
+      if (id !== null) childCatCache.set(key, id);
+      return id;
+    };
+
+    const txItems: (typeof transactions.$inferInsert)[] = [];
+
     for (const row of workRows) {
-      const typeId = await getOrCreateTypeId(row.type);
-      const paymentMethodId = await getOrCreatePaymentMethodId(row.paymentMethod);
-      const parentCategoryId = await getOrCreateParentCategoryId(row.parentCategory);
-      const childCategoryId = await getOrCreateChildCategoryId(row.childCategory, parentCategoryId);
+      const typeId = await getCachedTypeId(row.type);
+      const paymentMethodId = await getCachedPmId(row.paymentMethod);
+      const parentCategoryId = await getCachedParentCatId(row.parentCategory);
+      const childCategoryId = await getCachedChildCatId(row.childCategory, parentCategoryId);
 
       const txItem: typeof transactions.$inferInsert = {
         date: row.date,
@@ -286,13 +329,19 @@ export async function saveWorkToNormalizedTransactions() {
         txItem.userId = userId;
       }
 
-      await db.insert(transactions).values(txItem);
-      insertedCount++;
+      txItems.push(txItem);
+    }
+
+    // Batch insert normalized transactions in chunks of 500
+    const chunkSize = 500;
+    for (let i = 0; i < txItems.length; i += chunkSize) {
+      const chunk = txItems.slice(i, i + chunkSize);
+      await db.insert(transactions).values(chunk);
     }
 
     revalidatePath('/dashboard');
     revalidatePath('/import');
-    return { success: true, count: insertedCount, error: null };
+    return { success: true, count: txItems.length, error: null };
   } catch (error: unknown) {
     console.error('Failed to save transactions_work into transactions:', error);
     const message = error instanceof Error ? error.message : 'transactions テーブルへの保存に失敗しました';
@@ -500,8 +549,8 @@ export async function importCsv(formData: FormData) {
     console.log('inferInsert Start:');
 
     if (rows.length > 0) {
-      for (const row of rows) {
-        const workItem: typeof transactionsWork.$inferInsert = {
+      const workItems: (typeof transactionsWork.$inferInsert)[] = rows.map((row) => {
+        const item: typeof transactionsWork.$inferInsert = {
           date: row.date,
           type: row.type,
           paymentMethod: row.paymentMethod,
@@ -513,12 +562,17 @@ export async function importCsv(formData: FormData) {
           note: row.note,
           tag: row.tag,
         };
-
         if (userId) {
-          workItem.userId = userId;
+          item.userId = userId;
         }
+        return item;
+      });
 
-        await db.insert(transactionsWork).values(workItem);
+      // Batch insert in chunks of 500
+      const chunkSize = 500;
+      for (let i = 0; i < workItems.length; i += chunkSize) {
+        const chunk = workItems.slice(i, i + chunkSize);
+        await db.insert(transactionsWork).values(chunk);
       }
     }
 

@@ -25,6 +25,9 @@ export function getDb(): PostgresJsDatabase<typeof schema> {
     const client = postgres(databaseUrl, {
       prepare: false,
       ssl: sslOption,
+      max: 1,
+      idle_timeout: 10,
+      connect_timeout: 10,
     });
     _db = drizzle({ client, schema });
   }
