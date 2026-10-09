@@ -17,6 +17,9 @@ import { revalidatePath } from 'next/cache';
 import { parseHouseholdCsv } from '@/lib/csv';
 import { createClient } from '@/lib/supabase/server';
 import { normalizeName } from '@/lib/string-utils';
+import postgres from 'postgres';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import * as schema from '@/src/db/schema';
 
 // Helper to safely get user ID without throwing if Supabase env is unconfigured
 async function getSafeUserId(): Promise<string | null> {
@@ -523,7 +526,13 @@ export async function upsertCardSettingInDb(
 
 export async function importCsv(formData: FormData) {
   try {
-    //await ensureTransactionsWorkTableExists();
+    const client = postgres(process.env.DATABASE_URL!, {
+      prepare: false,
+      ssl: process.env.DATABASE_SSL === 'true' ? {} : false,
+      max: 1,
+      connect_timeout: 10,
+    });
+    const db = drizzle({ client, schema });
     const userId = await getSafeUserId();
 
     const file = formData.get('file') as File | null;
