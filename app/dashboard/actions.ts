@@ -623,8 +623,10 @@ export async function importCsv(formData: FormData) {
     if (userId) {
       await db.delete(transactionsWork).where(eq(transactionsWork.userId, userId));
     } else {
-      await db.delete(transactionsWork);
+      return { success: false };
     }
+
+    console.log('inferInsert Start:');
 
     if (rows.length > 0) {
       for (const row of rows) {
