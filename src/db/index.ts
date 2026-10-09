@@ -4,7 +4,7 @@ import postgres from 'postgres';
 import * as schema from './schema';
 
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-// src/db/index.ts
+
 let _db: PostgresJsDatabase<typeof schema> | null = null;
 
 export function getDb(): PostgresJsDatabase<typeof schema> {
@@ -18,9 +18,13 @@ export function getDb(): PostgresJsDatabase<typeof schema> {
       throw new Error('DATABASE_URL environment variable is not set.');
     }
 
+    // In Cloudflare Workers (workerd), passing 'require' causes postgres-js to set rejectUnauthorized = false,
+    // which throws ERR_OPTION_NOT_IMPLEMENTED in workerd. Passing {} enables SSL without setting rejectUnauthorized.
+    const sslOption = process.env.DATABASE_SSL === 'true' ? {} : false;
+
     const client = postgres(databaseUrl, {
       prepare: false,
-      ssl: process.env.DATABASE_SSL === 'true' ? 'require' : false,
+      ssl: sslOption,
     });
     _db = drizzle({ client, schema });
   }
