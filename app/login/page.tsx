@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, type SubmitEventHandler } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { createClient } from '@/utils/supabase/client';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-// app/login/page.tsx
+
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -38,13 +38,19 @@ export default function LoginPage() {
         }, 800);
       }
     } else {
-      const { error } = await supabase.auth.signUp({ email, password });
+      const { data, error } = await supabase.auth.signUp({ email, password });
       setLoading(false);
       if (error) {
         setMessage({ text: error.message, type: 'error' });
+      } else if (data.session) {
+        setMessage({ text: 'アカウント登録が完了し、自動ログインしました。ダッシュボードへ移動します...', type: 'success' });
+        setTimeout(() => {
+          router.push('/dashboard');
+          router.refresh();
+        }, 800);
       } else {
         setMessage({
-          text: '確認メールを送信しました。（ローカル等で autoconfirm の場合はそのままログイン可能です）',
+          text: '確認メールを送信しました。（メール内のリンクから認証を完了してください）',
           type: 'info',
         });
       }
@@ -91,10 +97,11 @@ export default function LoginPage() {
                 setMode('signin');
                 setMessage(null);
               }}
-              className={`py-2 text-xs sm:text-sm font-semibold rounded-lg transition ${mode === 'signin'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-slate-200'
-                }`}
+              className={`py-2 text-xs sm:text-sm font-semibold rounded-lg transition ${
+                mode === 'signin'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
             >
               ログイン
             </button>
@@ -104,10 +111,11 @@ export default function LoginPage() {
                 setMode('signup');
                 setMessage(null);
               }}
-              className={`py-2 text-xs sm:text-sm font-semibold rounded-lg transition ${mode === 'signup'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-slate-200'
-                }`}
+              className={`py-2 text-xs sm:text-sm font-semibold rounded-lg transition ${
+                mode === 'signup'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
             >
               新規登録
             </button>
@@ -116,12 +124,13 @@ export default function LoginPage() {
           {/* Alert Message */}
           {message && (
             <div
-              className={`mb-6 p-4 rounded-2xl text-xs sm:text-sm border ${message.type === 'error'
-                ? 'bg-rose-950/40 border-rose-800/50 text-rose-300'
-                : message.type === 'success'
+              className={`mb-6 p-4 rounded-2xl text-xs sm:text-sm border ${
+                message.type === 'error'
+                  ? 'bg-rose-950/40 border-rose-800/50 text-rose-300'
+                  : message.type === 'success'
                   ? 'bg-emerald-950/40 border-emerald-800/50 text-emerald-300'
                   : 'bg-sky-950/40 border-sky-800/50 text-sky-300'
-                }`}
+              }`}
             >
               {message.text}
             </div>
@@ -183,7 +192,7 @@ export default function LoginPage() {
             <button
               onClick={handleSignOut}
               disabled={loading}
-              className="hover:text-slate-200 underline transition"
+              className="hover:text-slate-200 underline transition cursor-pointer"
             >
               ログアウト
             </button>

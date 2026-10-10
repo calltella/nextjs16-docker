@@ -1,48 +1,17 @@
-import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { createClient } from '@/utils/supabase/server'
-import { useRouter } from 'next/navigation';
-import { cookies } from 'next/headers'
+import { createClient } from '@/utils/supabase/server';
+import { cookies } from 'next/headers';
+import HomeSignOutButton from '@/app/components/HomeSignOutButton';
 
 export default async function Home() {
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState<string | null>(null);
-  const cookieStore = await cookies()
-  const supabase = createClient(cookieStore)
-  const router = useRouter();
+  const cookieStore = await cookies();
+  const supabase = createClient(cookieStore);
 
-  useEffect(() => {
-    async function checkUser() {
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        setUserEmail(user?.email || null);
-      } catch {
-        setUserEmail(null);
-      } finally {
-        setLoading(false);
-      }
-    }
-    checkUser();
-  }, [supabase]);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  const handleSignOut = async () => {
-    setLoading(true);
-    setMessage(null);
-    try {
-      await supabase.auth.signOut();
-      setUserEmail(null);
-      setMessage('ログアウトしました。');
-    } catch (error) {
-      console.error('Sign out error:', error);
-      setMessage('ログアウト処理でエラーが発生しました。');
-    } finally {
-      setLoading(false);
-      router.refresh();
-    }
-  };
+  const userEmail = user?.email || null;
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 flex flex-col justify-center items-center p-6 relative overflow-hidden">
@@ -58,17 +27,15 @@ export default async function Home() {
           毎日の収支を簡単・スピーディに記録・管理できます。
         </p>
 
-        {/* User Session Info & Alert Message */}
-        {message && (
-          <div className="p-3 bg-blue-100 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300 rounded-xl text-xs font-semibold">
-            {message}
-          </div>
-        )}
-
-        {userEmail && (
+        {/* User Session Info */}
+        {userEmail ? (
           <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800/50 text-emerald-800 dark:text-emerald-300 rounded-2xl text-xs font-semibold flex items-center justify-center gap-2">
             <span>👤 ログイン中:</span>
             <span className="font-bold underline">{userEmail}</span>
+          </div>
+        ) : (
+          <div className="p-3 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 rounded-2xl text-xs font-semibold">
+            ログインしていません
           </div>
         )}
 
@@ -88,14 +55,7 @@ export default async function Home() {
             <span>🔑</span> ログイン画面
           </Link>
 
-          <button
-            type="button"
-            onClick={handleSignOut}
-            disabled={loading}
-            className="px-6 py-3 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 font-bold text-sm rounded-xl border border-red-200 dark:border-red-800/80 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
-          >
-            <span>🚪</span> ログアウト
-          </button>
+          {userEmail && <HomeSignOutButton />}
         </div>
 
         {/* Additional Navigation Links */}
